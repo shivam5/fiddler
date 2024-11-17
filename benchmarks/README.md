@@ -20,6 +20,8 @@ conda create -n deepspeed python=3.10
 conda activate deepspeed
 conda install -c anaconda mpi4py
 pip install deepspeed-mii accelerate pandas datasets
+pip install transformers==4.44.0
+pip install einops flash_attn
 python3 eval-baseline.py --framework=deepspeed-mii
 ```
 

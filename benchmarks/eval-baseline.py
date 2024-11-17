@@ -35,7 +35,8 @@ def init_deepspeed_mii():
     import deepspeed
     from transformers.deepspeed import HfDeepSpeedConfig
 
-    model_id = "mistralai/Mixtral-8x7B-v0.1"
+    # model_id = "mistralai/Mixtral-8x7B-v0.1"
+    model_id = "microsoft/Phi-3.5-MoE-instruct"
     ds_config = {
         "bf16": {
             "enabled": True,
@@ -44,7 +45,7 @@ def init_deepspeed_mii():
             "stage": 3,
             "offload_param": {
                 "device": "cpu",
-                "pin_memory": True,
+                "pin_memory": False,
             }
         },
         "train_micro_batch_size_per_gpu": 1,
@@ -55,7 +56,7 @@ def init_deepspeed_mii():
     model = AutoModelForCausalLM.from_pretrained(
         model_id, torch_dtype=torch.bfloat16)
 
-    deepspeed.utils.set_z3_leaf_modules(model, [MixtralSparseMoeBlock])
+    # deepspeed.utils.set_z3_leaf_modules(model, [MixtralSparseMoeBlock])
     model.eval()
 
     ds_engine = deepspeed.initialize(model=model, config_params=ds_config)[0]
@@ -137,7 +138,7 @@ def eval(model, dataset, prefill=False):
 
     logging.info(f'evaluating on dataset: {dataset}')
     if dataset == 'sharegpt':
-        path_json = '/workspace/fiddler-Michael/benchmarks/mixtral_offloading/ShareGPT_V3_unfiltered_cleaned_split.json'
+        path_json = '/workspace/fiddler/benchmarks/mixtral_offloading/ShareGPT_V3_unfiltered_cleaned_split.json'
         with open(path_json, 'r') as f:
             data = json.load(f)
         texts = []
@@ -176,7 +177,8 @@ def eval(model, dataset, prefill=False):
     f.write('input_token, output_token, batch_size, time, output_token/s\n')
     
 
-    model_name = "mistralai/Mixtral-8x7B-v0.1"
+    # model_name = "mistralai/Mixtral-8x7B-v0.1"
+    model_name = "microsoft/Phi-3.5-MoE-instruct"
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "left"
