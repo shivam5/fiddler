@@ -29,7 +29,7 @@ class FiddlerMixtral:
         self.past_key_value = transformers.cache_utils.DynamicCache.from_legacy_cache()
         self.past_key_values_length = 0
         self.cpu_offload = args.cpu_offload
-        self.beam_width = args.beam_width
+        self.beam_width = args.beam_num
         self.n_layer = len(self.model.layers)
         self.n_expert = len(self.model.layers[0].block_sparse_moe.experts)
        
