@@ -16,7 +16,7 @@ class FiddlerMixtral:
         self.model = transformers.MixtralForCausalLM.from_pretrained(
             args.model,
             torch_dtype=self.dtype,
-            # device_map='cpu',
+            device_map='cpu',
             use_cache=True,
         )
         self.lm_head = self.model.lm_head

@@ -10,7 +10,22 @@ Fiddler is a fast inference system for LLMs based on Mixture-of-Experts (MoE) ar
 
 ## Usage
 ```bash
-pip install -r requirements.txt
+cd /home/hice1/smittal98/scratch/fiddler
+
+conda create --prefix=fiddler_env python=3.10 -y
+conda activate ./fiddler_env
+conda install pytorch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2 pytorch-cuda=12.1 -c pytorch -c nvidia
+conda install transformers==4.36.2
+conda install accelerate==0.26.1
+
+huggingface-cli login
+
+export HF_HOME=/home/hice1/smittal98/scratch/hf_home
+export TRANSFORMERS_CACHE=$HF_HOME/transformers
+export HF_DATASETS_CACHE=$HF_HOME/datasets
+export HF_METRICS_CACHE=$HF_HOME/metrics
+
+python src/fiddler/infer.py
 python src/fiddler/infer.py --model <path/to/mixtral/model> --input <prompt>
 ```
 
