@@ -49,6 +49,9 @@ class FiddlerMixtral:
         print(
             f"Number of experts on GPU: {n_expert_on_gpu}/{self.n_layer * self.n_expert}"
         )
+        print(
+            f"Number of layers: {self.n_layer}, number of experts per layer: {self.n_expert}"
+        )
 
         self.set_expert_loc(n_expert_on_gpu)
         # print(self.expert_loc)
@@ -370,7 +373,7 @@ class FiddlerMixtral:
         output_tensor = input_tensor[row_idx].view(-1, 1)
         return output_tensor
 
-    def generate(self, text=None, output_token=20, input_token=None):
+    def generate(self, texts=None, output_token=20, input_token=None):
         torch.set_num_threads(16) # TODO: set appropriately
         self.past_key_value = transformers.cache_utils.DynamicCache.from_legacy_cache()
         self.past_key_values_length = 0
@@ -378,11 +381,23 @@ class FiddlerMixtral:
         self.cnt_expert_hit = 0
         self.cnt_expert_all = 0
         
-        input_ids, position_ids = self.tokenize(text)
-
-        if input_token is not None:
-            input_ids = input_ids[:, :input_token]
-            position_ids = position_ids[:, :input_token]
+        # Handle single text case
+        if isinstance(texts, str):
+            texts = [texts]
+        
+        input_ids_list = []
+        position_ids_list = []
+        for text in texts:
+            input_ids, position_ids = self.tokenize(text)
+            if input_token is not None:
+                input_ids = input_ids[:, :input_token]
+                position_ids = position_ids[:, :input_token]
+            input_ids_list.append(input_ids)
+            position_ids_list.append(position_ids)
+        
+        # Stack all inputs
+        input_ids = torch.cat(input_ids_list, dim=0)
+        position_ids = torch.cat(position_ids_list, dim=0)
 
         tick = time.time()
         is_decode = False
@@ -391,16 +406,15 @@ class FiddlerMixtral:
         search_start = False
         probs = torch.full((input_ids.shape[0], 1), 1.0)
 
-        print(f"Starting generation of {output_token} tokens...")
+        print(f"Starting generation of {output_token} tokens for batch size {input_ids.shape[0]}...")
         for i_token in range(output_token):
-            if i_token % 1 == 0:  # Log every 1 tokens
+            if i_token % 5 == 0:  # Log every 5 tokens
                 print(f"Generating token {i_token + 1}/{output_token}")
                 if is_decode:
-                    print(f"Current output: {decode_strings[0]}...")
+                    print(f"Current outputs: {[s[:50] + '...' for s in decode_strings]}")
 
             if self.beam_width == 1:
-                print(self.tokenizer.decode(input_ids[0]))
-                # TODO: streaming output for beam search
+                print([self.tokenizer.decode(ids) for ids in input_ids])
             if is_decode:
                 for i in range(input_ids.shape[0]):
                     decode_strings[i] += " " + self.tokenizer.decode(input_ids[i, :])
@@ -440,9 +454,9 @@ class FiddlerMixtral:
                     device=self.dev,
                 )
                 .unsqueeze(0)
-                .view(-1, 1)
+                .expand(input_ids.shape[0], -1)
             )
-            # position_ids.shape: (1, 1)
+            # position_ids.shape: (batch_size, 1)
             if not is_decode:
                 prefill_time += time.time() - tick
                 tick = time.time()
@@ -453,8 +467,8 @@ class FiddlerMixtral:
 
         print("\nGeneration complete!")
         print("--------------------")
-        print(f"Input: {text}")
-        print(f"Output: {decode_strings[max_ids[0]]}")
+        print(f"Inputs: {texts}")
+        print(f"Outputs: {[decode_strings[i] for i in max_ids]}")
         print(f"Prefill time: {prefill_time:.2f}s")
         print(f"Decode time: {decode_time:.2f}s")
         print(f"Expert hit rate: {self.cnt_expert_hit / self.cnt_expert_all:.2%}")
@@ -505,6 +519,7 @@ class FiddlerMixtral:
                 use_cache=True,
             )
             # inps.shape: (batch_size, seq_len/token_num, embed_dim)
+            # print(f"{inps.shape}. Should be: batch_size, seq_len/token_num, embed_dim")
             inps = inps_residual + inps
             inps_residual = inps
             inps = layer.post_attention_layernorm(inps)
@@ -512,6 +527,7 @@ class FiddlerMixtral:
             # inps.shape: (batch_size*seq_len*embed_dim/hidden_dim, hidden_dim)
             router_logits = layer.block_sparse_moe.gate(inps)
             routing_weights = F.softmax(router_logits, dim=1)
+
             # routing_weights.shape: (batch_size*seq_len, num_experts)
             routing_weights, selected_experts = torch.topk(routing_weights, 2, dim=-1)
             # routing_weights.shape: (batch_size*seq_len, 2)

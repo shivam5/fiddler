@@ -58,14 +58,17 @@ if __name__ == "__main__":
             idx_text = 0
             prefill_time_sum, decode_time_sum, hit_rate_sum = 0, 0, 0
             for _ in range(n_sample):
-                while True:
+                # Collect batch_size texts
+                batch_texts = []
+                while len(batch_texts) < args.batch_size:
                     text = texts[idx_text]
                     idx_text += 1
                     if len(text.split()) >= input_token:
                         # enough input length
-                        break
+                        batch_texts.append(text)
+                
                 prefill_time, decode_time, hit_rate = model.generate(
-                    [text], output_token=output_token, input_token=input_token
+                    batch_texts, output_token=output_token, input_token=input_token
                 )
                 prefill_time_sum += prefill_time
                 decode_time_sum += decode_time
@@ -74,8 +77,9 @@ if __name__ == "__main__":
             with open("latency.txt", "a") as f:
                 f.write(
                     f"input_token: {input_token}, output_token: {output_token}, "
+                    f"batch_size: {args.batch_size}, "
                     f"prefill_time: {prefill_time_sum / n_sample}, "
                     f"decode_time: {decode_time_sum / n_sample}, "
                     f"hit_rate: {hit_rate_sum / n_sample},"
-                    f"{output_token *n_sample/ (prefill_time_sum + decode_time_sum):.2f}token/s\n"
+                    f"{output_token * args.batch_size * n_sample/ (prefill_time_sum + decode_time_sum):.2f}token/s\n"
                 )

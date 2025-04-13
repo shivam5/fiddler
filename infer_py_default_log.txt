@@ -1,0 +1,184 @@
+(/storage/ice1/2/5/smittal98/fiddler/fiddler_env) [smittal98@atl1-1-03-013-3-0 fiddler]$ python src/fiddler/infer.py
+/storage/ice1/2/5/smittal98/fiddler/fiddler_env/lib/python3.10/site-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/storage/ice1/2/5/smittal98/fiddler/fiddler_env/lib/python3.10/site-packages/transformers/utils/hub.py:123: FutureWarning: Using `TRANSFORMERS_CACHE` is deprecated and will be removed in v5 of Transformers. Use `HF_HOME` instead.
+  warnings.warn(
+/storage/ice1/2/5/smittal98/fiddler/fiddler_env/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/storage/ice1/2/5/smittal98/fiddler/fiddler_env/lib/python3.10/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/storage/ice1/2/5/smittal98/fiddler/fiddler_env/lib/python3.10/site-packages/huggingface_hub/file_download.py:896: FutureWarning: `resume_download` is deprecated and will be removed in version 1.0.0. Downloads always resume when possible. If you want to force a new download, use `force_download=True`.
+  warnings.warn(
+Downloading shards: 100%|██████████████████████████████████████████████████████████████| 19/19 [00:00<00:00, 1486.34it/s]
+Loading checkpoint shards: 100%|█████████████████████████████████████████████████████████| 19/19 [00:05<00:00,  3.29it/s]
+Number of experts on GPU: 217/256
+Model is ready.
+Starting generation of 20 tokens...
+Generating token 1/20
+<s> University of Washington is
+
+Expert Processing Stats:
+Total experts processed: 256
+Experts on GPU: 217 (84.8%)
+Experts on CPU: 39 (15.2%)
+Generating token 2/20
+Current output: ...
+a
+
+Expert Processing Stats:
+Total experts processed: 256
+Experts on GPU: 217 (84.8%)
+Experts on CPU: 39 (15.2%)
+Generating token 3/20
+Current output:  a...
+higher
+
+Expert Processing Stats:
+Total experts processed: 256
+Experts on GPU: 217 (84.8%)
+Experts on CPU: 39 (15.2%)
+Generating token 4/20
+Current output:  a higher...
+education
+
+Expert Processing Stats:
+Total experts processed: 256
+Experts on GPU: 217 (84.8%)
+Experts on CPU: 39 (15.2%)
+Generating token 5/20
+Current output:  a higher education...
+institution
+
+Expert Processing Stats:
+Total experts processed: 256
+Experts on GPU: 217 (84.8%)
+Experts on CPU: 39 (15.2%)
+Generating token 6/20
+Current output:  a higher education institution...
+located
+
+Expert Processing Stats:
+Total experts processed: 256
+Experts on GPU: 217 (84.8%)
+Experts on CPU: 39 (15.2%)
+Generating token 7/20
+Current output:  a higher education institution located...
+in
+
+Expert Processing Stats:
+Total experts processed: 256
+Experts on GPU: 217 (84.8%)
+Experts on CPU: 39 (15.2%)
+Generating token 8/20
+Current output:  a higher education institution located in...
+King
+
+Expert Processing Stats:
+Total experts processed: 256
+Experts on GPU: 217 (84.8%)
+Experts on CPU: 39 (15.2%)
+Generating token 9/20
+Current output:  a higher education institution located in King...
+County
+
+Expert Processing Stats:
+Total experts processed: 256
+Experts on GPU: 217 (84.8%)
+Experts on CPU: 39 (15.2%)
+Generating token 10/20
+Current output:  a higher education institution located in King County...
+,
+
+Expert Processing Stats:
+Total experts processed: 256
+Experts on GPU: 217 (84.8%)
+Experts on CPU: 39 (15.2%)
+Generating token 11/20
+Current output:  a higher education institution located in King County ,...
+WA
+
+Expert Processing Stats:
+Total experts processed: 256
+Experts on GPU: 217 (84.8%)
+Experts on CPU: 39 (15.2%)
+Generating token 12/20
+Current output:  a higher education institution located in King County , WA...
+.
+
+Expert Processing Stats:
+Total experts processed: 256
+Experts on GPU: 217 (84.8%)
+Experts on CPU: 39 (15.2%)
+Generating token 13/20
+Current output:  a higher education institution located in King County , WA ....
+In
+
+Expert Processing Stats:
+Total experts processed: 256
+Experts on GPU: 217 (84.8%)
+Experts on CPU: 39 (15.2%)
+Generating token 14/20
+Current output:  a higher education institution located in King County , WA . In...
+
+
+Expert Processing Stats:
+Total experts processed: 256
+Experts on GPU: 217 (84.8%)
+Experts on CPU: 39 (15.2%)
+Generating token 15/20
+Current output:  a higher education institution located in King County , WA . In ...
+2
+
+Expert Processing Stats:
+Total experts processed: 256
+Experts on GPU: 217 (84.8%)
+Experts on CPU: 39 (15.2%)
+Generating token 16/20
+Current output:  a higher education institution located in King County , WA . In  2...
+0
+
+Expert Processing Stats:
+Total experts processed: 256
+Experts on GPU: 217 (84.8%)
+Experts on CPU: 39 (15.2%)
+Generating token 17/20
+Current output:  a higher education institution located in King County , WA . In  2 0...
+1
+
+Expert Processing Stats:
+Total experts processed: 256
+Experts on GPU: 217 (84.8%)
+Experts on CPU: 39 (15.2%)
+Generating token 18/20
+Current output:  a higher education institution located in King County , WA . In  2 0 1...
+6
+
+Expert Processing Stats:
+Total experts processed: 256
+Experts on GPU: 217 (84.8%)
+Experts on CPU: 39 (15.2%)
+Generating token 19/20
+Current output:  a higher education institution located in King County , WA . In  2 0 1 6...
+,
+
+Expert Processing Stats:
+Total experts processed: 256
+Experts on GPU: 217 (84.8%)
+Experts on CPU: 39 (15.2%)
+Generating token 20/20
+Current output:  a higher education institution located in King County , WA . In  2 0 1 6 ,...
+the
+
+Expert Processing Stats:
+Total experts processed: 256
+Experts on GPU: 217 (84.8%)
+Experts on CPU: 39 (15.2%)
+
+Generation complete!
+--------------------
+Input: University of Washington is
+Output:  a higher education institution located in King County , WA . In  2 0 1 6 , the
+Prefill time: 107.20s
+Decode time: 80.24s
+Expert hit rate: 84.11%
+prefill_time: 107.20036244392395, decode_time: 80.24190330505371, hit_rate: 0.8411458333333334
