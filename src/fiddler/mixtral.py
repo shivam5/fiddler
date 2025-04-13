@@ -391,7 +391,13 @@ class FiddlerMixtral:
         search_start = False
         probs = torch.full((input_ids.shape[0], 1), 1.0)
 
+        print(f"Starting generation of {output_token} tokens...")
         for i_token in range(output_token):
+            if i_token % 1 == 0:  # Log every 1 tokens
+                print(f"Generating token {i_token + 1}/{output_token}")
+                if is_decode:
+                    print(f"Current output: {decode_strings[0]}...")
+
             if self.beam_width == 1:
                 print(self.tokenizer.decode(input_ids[0]))
                 # TODO: streaming output for beam search
@@ -445,9 +451,13 @@ class FiddlerMixtral:
         probs = probs.view(-1, self.beam_width)
         max_ids = torch.argmax(probs, dim=-1)
 
+        print("\nGeneration complete!")
         print("--------------------")
         print(f"Input: {text}")
         print(f"Output: {decode_strings[max_ids[0]]}")
+        print(f"Prefill time: {prefill_time:.2f}s")
+        print(f"Decode time: {decode_time:.2f}s")
+        print(f"Expert hit rate: {self.cnt_expert_hit / self.cnt_expert_all:.2%}")
 
         return (
             prefill_time,
@@ -478,6 +488,10 @@ class FiddlerMixtral:
         hidden_dim = self.model.config.hidden_size
         inps = input_ids.to(self.dev)
         inps = self.model.embed_tokens(inps)
+
+        total_experts_processed = 0
+        cpu_experts_processed = 0
+        gpu_experts_processed = 0
 
         for i_layer, layer in enumerate(self.model.layers):
             original_inps_shape = inps.shape
@@ -523,6 +537,12 @@ class FiddlerMixtral:
                         continue
 
                     # torch.cuda.synchronize()
+                    total_experts_processed += 1
+                    if is_cuda:
+                        gpu_experts_processed += 1
+                    else:
+                        cpu_experts_processed += 1
+
                     top_2_list = top_2.tolist()
                     idx_list = idx.tolist()
 
@@ -599,6 +619,10 @@ class FiddlerMixtral:
                     else:
                         gpu_experts.append(i_expert)
 
+                total_experts_processed += len(experts)
+                cpu_experts_processed += len(cpu_experts)
+                gpu_experts_processed += len(gpu_experts)
+
                 for i_expert in gpu_experts:
                     top_2_list = top_2s[i_expert].tolist()
                     idx_list = idxs[i_expert].tolist()
@@ -645,6 +669,13 @@ class FiddlerMixtral:
         lm_logis = self.lm_head(inps)
 
         self.present_key_value = present_key_value
+        
+        # Log expert processing statistics
+        print(f"\nExpert Processing Stats:")
+        print(f"Total experts processed: {total_experts_processed}")
+        print(f"Experts on GPU: {gpu_experts_processed} ({gpu_experts_processed/total_experts_processed:.1%})")
+        print(f"Experts on CPU: {cpu_experts_processed} ({cpu_experts_processed/total_experts_processed:.1%})")
+        
         return lm_logis
 
     def run_expert_at_cpu(self, i_layer, i_expert, inps, routing_weights):
