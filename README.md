@@ -10,23 +10,35 @@ Fiddler is a fast inference system for LLMs based on Mixture-of-Experts (MoE) ar
 
 ## Usage
 ```bash
-cd /home/hice1/smittal98/scratch/fiddler
+# cd /home/hice1/smittal98/scratch/fiddler
+cd /home/vimagupta123/shivam/fiddler
 
-conda create --prefix=fiddler_env python=3.10 -y
-conda activate ./fiddler_env
-conda install pytorch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2 pytorch-cuda=12.1 -c pytorch -c nvidia
-conda install transformers==4.36.2
-conda install accelerate==0.26.1
+conda create --prefix=fiddler_env2 python=3.10 -y
+conda activate ./fiddler_env2
+conda install pytorch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2 pytorch-cuda=12.1 transformers==4.36.2 accelerate==0.26.1 -c pytorch -c nvidia
+# conda install vllm
+# conda install transformers==4.36.2
+# conda install accelerate==0.26.1
 
-huggingface-cli login
+# huggingface-cli login
 
-export HF_HOME=/home/hice1/smittal98/scratch/hf_home
-export TRANSFORMERS_CACHE=$HF_HOME/transformers
-export HF_DATASETS_CACHE=$HF_HOME/datasets
-export HF_METRICS_CACHE=$HF_HOME/metrics
+# # export HF_HOME=/home/hice1/smittal98/scratch/hf_home
+# export HF_HOME=/home/vimagupta123/shivam/fiddler
+# export TRANSFORMERS_CACHE=$HF_HOME/hub
+# export HF_DATASETS_CACHE=$HF_HOME/datasets
+# export HF_METRICS_CACHE=$HF_HOME/metrics
 
-python src/fiddler/infer.py
-python src/fiddler/infer.py --model <path/to/mixtral/model> --input <prompt>
+# export HF_HOME=/home/vimagupta123/.cache/huggingface
+# export TRANSFORMERS_CACHE=$HF_HOME/hub
+# export HF_DATASETS_CACHE=$HF_HOME/datasets
+# export HF_METRICS_CACHE=$HF_HOME/metrics
+
+# python src/fiddler/infer.py
+# python src/fiddler/infer.py --model <path/to/mixtral/model> --input <prompt>
+
+python latency.py --routing_policy simple
+python latency.py --routing_policy advanced
+
 ```
 
 ## Key Idea

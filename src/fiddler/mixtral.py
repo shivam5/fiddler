@@ -30,6 +30,7 @@ class FiddlerMixtral:
         self.past_key_values_length = 0
         self.cpu_offload = args.cpu_offload
         self.beam_width = args.beam_num
+        self.routing_policy = args.routing_policy
         self.n_layer = len(self.model.layers)
         self.n_expert = len(self.model.layers[0].block_sparse_moe.experts)
        
@@ -526,13 +527,27 @@ class FiddlerMixtral:
             inps = inps.view(-1, hidden_dim)
             # inps.shape: (batch_size*seq_len*embed_dim/hidden_dim, hidden_dim)
             router_logits = layer.block_sparse_moe.gate(inps)
-            routing_weights = F.softmax(router_logits, dim=1)
+            
+            # Use custom routing if specified
+            if hasattr(self, 'routing_policy') and self.routing_policy != "do-nothing":
+                from fiddler.custom_routing import custom_routing_function
+                routing_weights, selected_experts, num_experts_to_keep = custom_routing_function(
+                    hidden_states=inps,
+                    router_logits=router_logits,
+                    topk=2,  # We use top-2 experts
+                    renormalize=True
+                )
+                # Ensure correct dtypes
+                if selected_experts.dtype != torch.int64:
+                    selected_experts = selected_experts.to(torch.int64)
+                routing_weights = routing_weights.to(inps.dtype)
+            else:
+                routing_weights = F.softmax(router_logits, dim=1)
+                routing_weights, selected_experts = torch.topk(routing_weights, 2, dim=-1)
+                routing_weights /= routing_weights.sum(dim=-1, keepdim=True)
 
-            # routing_weights.shape: (batch_size*seq_len, num_experts)
-            routing_weights, selected_experts = torch.topk(routing_weights, 2, dim=-1)
             # routing_weights.shape: (batch_size*seq_len, 2)
             # selected_experts.shape: (batch_size*seq_len, 2)
-            routing_weights /= routing_weights.sum(dim=-1, keepdim=True)
 
             # intermediate variable to store the output of experts
             inps_after_experts = torch.zeros_like(inps, device=self.dev)
@@ -575,7 +590,7 @@ class FiddlerMixtral:
                             current_state, routing_weights[top_2_list, idx_list, None]
                         )
                     inps_after_experts.index_add_(
-                        0, top_2, current_state.to(inps.dtype)
+                        0, top_2, current_state.to(inps_after_experts.dtype)
                     )
 
                     if not is_cuda:

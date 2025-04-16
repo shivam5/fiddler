@@ -34,10 +34,25 @@ if __name__ == "__main__":
         help="batch size for inference.",
     )
     parser.add_argument("--beam_num", type=int, default=1, help="Beam search number.")
+    parser.add_argument(
+        "--routing_policy",
+        type=str,
+        default="do-nothing",
+        choices=["do-nothing", "simple", "advanced", "advanced_parametrized", "rotate", "rotate_based_on_confidence"],
+        help="Routing policy to use for expert selection.",
+    )
 
     args = parser.parse_args()
 
-    path_json = "./ShareGPT_V3_unfiltered_cleaned_split.json"
+    # Use absolute path for the ShareGPT file
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    path_json = os.path.join(base_dir, "mixtral_offloading", "Mixtral-8x7B-Instruct-v0.1", "ShareGPT_V3_unfiltered_cleaned_split.json")
+    
+    if not os.path.exists(path_json):
+        print(f"Error: Could not find ShareGPT file at {path_json}")
+        print("Please ensure the file exists at the correct location.")
+        sys.exit(1)
+
     with open(path_json, "r") as f:
         data = json.load(f)
 
@@ -55,8 +70,8 @@ if __name__ == "__main__":
 
     # for input_token in [16, 32, 64, 128]:
     #     for output_token in [16, 32, 64, 128, 256, 512]:
-    for input_token in [16]:
-        for output_token in [16]:
+    for input_token in [512]:
+        for output_token in [128]:
             idx_text = 0
             prefill_time_sum, decode_time_sum, hit_rate_sum = 0, 0, 0
             for _ in range(n_sample):
