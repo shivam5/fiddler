@@ -410,9 +410,19 @@ class FiddlerMixtral:
         search_start = False
         probs = torch.full((input_ids.shape[0], 1), 1.0)
 
+        # print(f"Starting generation of {output_token} tokens for batch size {input_ids.shape[0]}...")
         for i_token in range(output_token):
-            # Remove all per-token logging
-            
+            # if i_token % 5 == 0:  # Log every 5 tokens
+            #     print(f"Generating token {i_token + 1}/{output_token}")
+            #     if is_decode:
+            #         print(f"Current outputs: {[s[:50] + '...' for s in decode_strings]}")
+
+            # if self.beam_width == 1:
+            #     print([self.tokenizer.decode(ids) for ids in input_ids])
+            # if is_decode:
+            #     for i in range(input_ids.shape[0]):
+            #         decode_strings[i] += " " + self.tokenizer.decode(input_ids[i, :])
+
             logits = self.mixtral_forward(input_ids, position_ids, is_decode)
 
             logits = logits.to("cpu")
@@ -462,6 +472,8 @@ class FiddlerMixtral:
         # Log completion info after timing
         print("\nGeneration complete!")
         print("--------------------")
+        print(f"Inputs: {texts}")
+        print(f"Outputs: {[decode_strings[i] for i in max_ids]}")
         print(f"Prefill time: {prefill_time:.2f}s")
         print(f"Decode time: {decode_time:.2f}s")
         print(f"Expert hit rate: {self.cnt_expert_hit / self.cnt_expert_all:.2%}")
@@ -499,8 +511,24 @@ class FiddlerMixtral:
         total_experts_processed = 0
         cpu_experts_processed = 0
         gpu_experts_processed = 0
+        
+        # Track expert utilization statistics
+        expert_stats = {
+            "total": {"all": 0, "gpu": 0, "cpu": 0},
+            "by_layer": {},
+            "decode_step": is_decode,  # Flag to indicate if this is a decode step
+            "tokens_per_batch": inps.shape[0]  # Number of tokens being processed
+        }
+
+        # Count experts activated per token in batch
+        total_experts_per_token = 0
+        total_tokens = 0
 
         for i_layer, layer in enumerate(self.model.layers):
+            # Initialize layer stats
+            layer_stats = {"unique_experts_used": 0, "experts_on_gpu": 0, "experts_on_cpu": 0, "tokens_processed": 0, "experts_per_token": 0}
+            expert_stats["by_layer"][i_layer] = layer_stats
+            
             original_inps_shape = inps.shape
 
             inps_residual = inps
@@ -511,17 +539,15 @@ class FiddlerMixtral:
                 past_key_value=self.past_key_value,
                 use_cache=True,
             )
-            # inps.shape: (batch_size, seq_len/token_num, embed_dim)
-            # print(f"{inps.shape}. Should be: batch_size, seq_len/token_num, embed_dim")
             inps = inps_residual + inps
             inps_residual = inps
             inps = layer.post_attention_layernorm(inps)
             inps = inps.view(-1, hidden_dim)
-            # inps.shape: (batch_size*seq_len*embed_dim/hidden_dim, hidden_dim)
+            
             router_logits = layer.block_sparse_moe.gate(inps)
             
             # Use custom routing if specified
-            if hasattr(self, 'routing_policy') and self.routing_policy != "do-nothing":
+            if hasattr(self, 'routing_policy'):
                 from fiddler.custom_routing import custom_routing_function
                 routing_weights, selected_experts, num_experts_to_keep = custom_routing_function(
                     hidden_states=inps,
@@ -538,9 +564,6 @@ class FiddlerMixtral:
                 routing_weights, selected_experts = torch.topk(routing_weights, 2, dim=-1)
                 routing_weights /= routing_weights.sum(dim=-1, keepdim=True)
 
-            # routing_weights.shape: (batch_size*seq_len, 2)
-            # selected_experts.shape: (batch_size*seq_len, 2)
-
             # intermediate variable to store the output of experts
             inps_after_experts = torch.zeros_like(inps, device=self.dev)
             experts = layer.block_sparse_moe.experts
@@ -551,15 +574,36 @@ class FiddlerMixtral:
                     selected_experts, num_classes=8
                 ).permute(2, 1, 0)
 
+                # Track which experts are actually used in this layer
+                experts_used = set()
+                experts_on_gpu = set()
+                experts_on_cpu = set()
+                
+                # Count how many tokens are processed
+                num_tokens_processed = inps.shape[0]
+                layer_stats["tokens_processed"] = num_tokens_processed
+                total_tokens += num_tokens_processed
+                
+                # Track experts activated per token
+                experts_activated = 0
+
                 for i_expert in range(len(experts)):
                     is_cuda = self.is_expert_in_gpu(i_layer, i_expert)
                     idx, top_2 = torch.where(expert_mask[i_expert])
 
                     if top_2.shape[0] == 0:
-                        # print(f"Expert {i_expert}: has no tokens")
                         continue
+                    
+                    # Count how many tokens use this expert
+                    experts_activated += top_2.shape[0]
 
-                    # torch.cuda.synchronize()
+                    # This expert is actually used
+                    experts_used.add(i_expert)
+                    if is_cuda:
+                        experts_on_gpu.add(i_expert)
+                    else:
+                        experts_on_cpu.add(i_expert)
+
                     total_experts_processed += 1
                     if is_cuda:
                         gpu_experts_processed += 1
@@ -588,7 +632,23 @@ class FiddlerMixtral:
                     if not is_cuda:
                         experts[i_expert] = experts[i_expert].to("cpu")
 
-                    # end of one expert
+                # Calculate experts per token
+                experts_per_token = experts_activated / max(1, num_tokens_processed)
+                layer_stats["experts_per_token"] = experts_per_token
+                total_experts_per_token += experts_per_token
+                
+                # Update layer statistics
+                layer_stats["unique_experts_used"] = len(experts_used)
+                layer_stats["experts_on_gpu"] = len(experts_on_gpu)
+                layer_stats["experts_on_cpu"] = len(experts_on_cpu)
+                layer_stats["experts_used"] = list(experts_used)
+                layer_stats["gpu_experts"] = list(experts_on_gpu)
+                layer_stats["cpu_experts"] = list(experts_on_cpu)
+                
+                # Update total statistics
+                expert_stats["total"]["all"] += len(experts_used)
+                expert_stats["total"]["gpu"] += len(experts_on_gpu)
+                expert_stats["total"]["cpu"] += len(experts_on_cpu)
 
             else:
                 # prefill stage with offloading
@@ -596,6 +656,19 @@ class FiddlerMixtral:
                     selected_experts, num_classes=8
                 ).permute(2, 1, 0)
 
+                # Track which experts are needed
+                experts_used = set()
+                experts_on_gpu = set()
+                experts_on_cpu = set()
+                
+                # Count how many tokens are processed
+                num_tokens_processed = inps.shape[0]
+                layer_stats["tokens_processed"] = num_tokens_processed
+                total_tokens += num_tokens_processed
+                
+                # Track experts activated per token
+                experts_activated = 0
+                
                 # first, calculate the number of tokens for each expert
                 idxs, top_2s = [], []
                 cost_per_expert = np.zeros(
@@ -605,16 +678,47 @@ class FiddlerMixtral:
                     idx, top_2 = torch.where(expert_mask[i_expert])
                     idxs.append(idx)
                     top_2s.append(top_2)
+                    
+                    # Count how many tokens use this expert
+                    experts_activated += top_2.shape[0]
+                    
                     # expected latency at CPU: number of token * cost_at_cpu
                     # expected latency at GPU: cost_at_gpu (constant)
                     cost_per_expert[i_expert, 0] = top_2.shape[0] * self.latency_cpu
                     cost_per_expert[i_expert, 1] = self.latency_gpu
+                    
+                    # Track if this expert is used
+                    if top_2.shape[0] > 0:
+                        experts_used.add(i_expert)
+                        if self.is_expert_in_gpu(i_layer, i_expert):
+                            experts_on_gpu.add(i_expert)
+                        else:
+                            experts_on_cpu.add(i_expert)
+                    
                     if self.is_expert_in_gpu(i_layer, i_expert):
                         # if the expert is in GPU, the latency at GPU is
                         # approximately 0
                         cost_per_expert[i_expert, 1] = 0
                         self.cnt_expert_hit += top_2.shape[0]
                     self.cnt_expert_all += top_2.shape[0]
+                
+                # Calculate experts per token
+                experts_per_token = experts_activated / max(1, num_tokens_processed)
+                layer_stats["experts_per_token"] = experts_per_token
+                total_experts_per_token += experts_per_token
+                
+                # Update layer statistics
+                layer_stats["unique_experts_used"] = len(experts_used)
+                layer_stats["experts_on_gpu"] = len(experts_on_gpu)
+                layer_stats["experts_on_cpu"] = len(experts_on_cpu)
+                layer_stats["experts_used"] = list(experts_used)
+                layer_stats["gpu_experts"] = list(experts_on_gpu)
+                layer_stats["cpu_experts"] = list(experts_on_cpu)
+                
+                # Update total statistics
+                expert_stats["total"]["all"] += len(experts_used)
+                expert_stats["total"]["gpu"] += len(experts_on_gpu)
+                expert_stats["total"]["cpu"] += len(experts_on_cpu)
                 
                 # second, partition experts processing between CPU and GPU so that we can minimize:
                 # max(sum of cost at CPU, sum of cost at GPU)
@@ -697,13 +801,19 @@ class FiddlerMixtral:
         self.total_experts_processed = total_experts_processed
         self.gpu_experts_processed = gpu_experts_processed
         self.cpu_experts_processed = cpu_experts_processed
+        self.expert_stats = expert_stats
+                
+        # Calculate average experts used per layer
+        expert_stats["avg_experts_per_layer"] = expert_stats["total"]["all"] / len(self.model.layers)
+        expert_stats["avg_gpu_experts_per_layer"] = expert_stats["total"]["gpu"] / len(self.model.layers)
+        expert_stats["avg_cpu_experts_per_layer"] = expert_stats["total"]["cpu"] / len(self.model.layers)
         
-        # Log expert processing statistics
-        # print(f"\nExpert Processing Stats:")
-        # print(f"Total experts processed: {total_experts_processed}")
-        # print(f"Experts on GPU: {gpu_experts_processed} ({gpu_experts_processed/total_experts_processed:.1%})")
-        # print(f"Experts on CPU: {cpu_experts_processed} ({cpu_experts_processed/total_experts_processed:.1%})")
-        
+        # Calculate average experts per token per layer
+        if total_tokens > 0:
+            expert_stats["avg_experts_per_token"] = total_experts_per_token / len(self.model.layers)
+        else:
+            expert_stats["avg_experts_per_token"] = 0
+                
         return lm_logis
 
     def run_expert_at_cpu(self, i_layer, i_expert, inps, routing_weights):

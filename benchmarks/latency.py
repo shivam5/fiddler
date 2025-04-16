@@ -40,7 +40,7 @@ if __name__ == "__main__":
         "--routing_policy",
         type=str,
         default="do-nothing",
-        choices=["do-nothing", "simple", "advanced", "advanced_parametrized", "rotate", "rotate_based_on_confidence"],
+        choices=["do-nothing", "simple", "advanced", "advanced_parametrized", "rotate", "rotate_based_on_confidence", "gpu_only"],
         help="Routing policy to use for expert selection.",
     )
     parser.add_argument(
@@ -131,26 +131,60 @@ if __name__ == "__main__":
         model.cpu_experts_processed = 0
         model.total_experts_processed = 0
         
-        # Start timing
-        start_time = time.time()
+        # Start timing - we'll use the times returned by the model itself
+        # which only measure the actual computation time, not the logging
         prefill_time, decode_time, hit_rate = model.generate(
             batch_texts, output_token=output_token, input_token=input_token
         )
-        total_time = time.time() - start_time
         
         # Record results
         metrics["results"].append({
             "sample_idx": sample_idx,
             "prefill_time": prefill_time,
             "decode_time": decode_time,
-            "total_time": total_time,
+            "total_time": prefill_time + decode_time,
             "hit_rate": hit_rate,
             "throughput": output_token / decode_time,
             "total_experts_processed": getattr(model, "total_experts_processed", 0),
             "gpu_experts_processed": getattr(model, "gpu_experts_processed", 0),
             "cpu_experts_processed": getattr(model, "cpu_experts_processed", 0),
-            "gpu_expert_percentage": getattr(model, "gpu_experts_processed", 0) / max(1, getattr(model, "total_experts_processed", 1))
+            "gpu_expert_percentage": getattr(model, "gpu_experts_processed", 0) / max(1, getattr(model, "total_experts_processed", 1)),
+            "expert_utilization": getattr(model, "expert_stats", {})
         })
+        
+        # Print expert utilization stats
+        if hasattr(model, "expert_stats"):
+            expert_stats = model.expert_stats
+            print("\nExpert Utilization Statistics:")
+            print(f"Routing Policy: {args.routing_policy}")
+            print(f"Batch Size: {args.batch_size}")
+            print(f"Phase: {'Decode' if expert_stats.get('decode_step', False) else 'Prefill'}")
+            print(f"Tokens in this batch: {expert_stats.get('tokens_per_batch', 0)}")
+            
+            if "avg_experts_per_token" in expert_stats:
+                print(f"\nExperts per token: {expert_stats['avg_experts_per_token']:.2f}")
+                print(f"  (This should be close to 2.0 for top-2 routing)")
+            
+            print(f"\nAverage unique experts used per layer: {expert_stats['avg_experts_per_layer']:.2f} out of 8")
+            print(f"  - On GPU: {expert_stats['avg_gpu_experts_per_layer']:.2f}")
+            print(f"  - On CPU: {expert_stats['avg_cpu_experts_per_layer']:.2f}")
+            
+            # Print the layers with highest/lowest expert utilization
+            layer_experts_per_token = [(layer_idx, stats.get("experts_per_token", 0)) 
+                                for layer_idx, stats in expert_stats["by_layer"].items()]
+            layer_experts_per_token.sort(key=lambda x: x[1], reverse=True)
+            
+            print(f"\nLayers with highest experts-per-token:")
+            for layer_idx, experts_per_token in layer_experts_per_token[:3]:
+                layer_stats = expert_stats["by_layer"][layer_idx]
+                print(f"  Layer {layer_idx}: {experts_per_token:.2f} experts per token, " + 
+                      f"{layer_stats['unique_experts_used']} unique experts used")
+                
+            print(f"\nLayers with lowest experts-per-token:")
+            for layer_idx, experts_per_token in layer_experts_per_token[-3:]:
+                layer_stats = expert_stats["by_layer"][layer_idx]
+                print(f"  Layer {layer_idx}: {experts_per_token:.2f} experts per token, " + 
+                      f"{layer_stats['unique_experts_used']} unique experts used")
         
         print(f"Sample {sample_idx+1} complete: Prefill: {prefill_time:.2f}s, Decode: {decode_time:.2f}s, Hit rate: {hit_rate:.2%}")
     

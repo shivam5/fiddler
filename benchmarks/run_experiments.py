@@ -62,6 +62,18 @@ def generate_plots(result_files, output_dir="plots"):
             summary = data["summary"]
             summary["policy"] = policy
             summary["batch_size"] = batch_size
+            
+            # Add expert utilization data if available
+            if "results" in data and len(data["results"]) > 0:
+                if "expert_utilization" in data["results"][0]:
+                    for result in data["results"]:
+                        if "expert_utilization" in result:
+                            util = result["expert_utilization"]
+                            if "avg_experts_per_layer" in util:
+                                summary["avg_experts_per_layer"] = util["avg_experts_per_layer"]
+                                summary["avg_gpu_experts_per_layer"] = util["avg_gpu_experts_per_layer"]
+                                summary["avg_cpu_experts_per_layer"] = util["avg_cpu_experts_per_layer"]
+            
             all_results.append(summary)
     
     # Convert to DataFrame for easier plotting
@@ -123,7 +135,41 @@ def generate_plots(result_files, output_dir="plots"):
     plt.legend()
     plt.savefig(f"{output_dir}/gpu_expert_utilization.png", dpi=300)
     
-    # 4. Bar chart comparing policies for a specific batch size
+    # 4. Plot experts used per layer for different policies
+    if "avg_experts_per_layer" in df.columns:
+        plt.figure(figsize=(12, 8))
+        
+        # Group by policy and get average
+        policy_expert_usage = df.groupby("policy")[
+            ["avg_experts_per_layer", "avg_gpu_experts_per_layer", "avg_cpu_experts_per_layer"]
+        ].mean().reset_index()
+        
+        # Sort by avg_experts_per_layer
+        policy_expert_usage = policy_expert_usage.sort_values("avg_experts_per_layer", ascending=False)
+        
+        # Create bar plot
+        policies = policy_expert_usage["policy"]
+        x = np.arange(len(policies))
+        width = 0.25
+        
+        fig, ax = plt.subplots(figsize=(12, 8))
+        ax.bar(x - width, policy_expert_usage["avg_experts_per_layer"], width, label="Total Experts")
+        ax.bar(x, policy_expert_usage["avg_gpu_experts_per_layer"], width, label="GPU Experts")
+        ax.bar(x + width, policy_expert_usage["avg_cpu_experts_per_layer"], width, label="CPU Experts")
+        
+        ax.set_ylabel("Avg Experts Per Layer")
+        ax.set_title("Expert Utilization by Routing Policy")
+        ax.set_xticks(x)
+        ax.set_xticklabels(policies)
+        ax.legend()
+        ax.grid(True, axis='y')
+        
+        # Add a horizontal line at 8 (total experts)
+        ax.axhline(y=8, color='r', linestyle='--', alpha=0.5, label="Total Experts Available")
+        
+        plt.savefig(f"{output_dir}/expert_utilization_by_policy.png", dpi=300)
+    
+    # 5. Bar chart comparing policies for a specific batch size
     plt.figure(figsize=(12, 8))
     
     # Select a batch size (e.g., the maximum one)
@@ -140,7 +186,7 @@ def generate_plots(result_files, output_dir="plots"):
     plt.grid(True, axis='y')
     plt.savefig(f"{output_dir}/policy_comparison_bs{max_batch_size}.png", dpi=300)
     
-    # 5. Save summary table as CSV
+    # 6. Save summary table as CSV
     df.to_csv(f"{output_dir}/summary_results.csv", index=False)
     
     print(f"Plots and summary saved to {output_dir}")
@@ -151,7 +197,8 @@ def main():
     parser.add_argument("--batch_sizes", type=int, nargs="+", default=[4], 
                         help="Batch sizes to test")
     parser.add_argument("--policies", type=str, nargs="+", 
-                        default=["do-nothing", "simple", "advanced", "rotate"],
+                        default=["do-nothing", "gpu_only", "simple", "advanced", "rotate"],
+                        # default=["do-nothing", "simple", "advanced", "rotate"],
                         help="Routing policies to test")
     parser.add_argument("--input_token", type=int, default=512, 
                         help="Number of input tokens")

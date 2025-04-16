@@ -24,7 +24,6 @@ def custom_routing_function(hidden_states: torch.Tensor,
     threshold_percentile = 0.5  # Default threshold
     count_of_topk = 2  # Default count
 
-    print(f"Routing policy: {policy}")
     if policy == "do-nothing":
         topk_weights, topk_ids = fused_topk(
             hidden_states, router_logits, topk, renormalize
@@ -38,8 +37,34 @@ def custom_routing_function(hidden_states: torch.Tensor,
         topk_weights_initial, topk_ids_initial = fused_topk(
             hidden_states, masked_logits, topk, renormalize=True
         )
+        
+        if policy == "gpu_only":
+            # Get the current layer index from the model
+            i_layer = frame.f_locals.get('i_layer', 0)
+            
+            # Create mask for GPU experts
+            mask = torch.zeros(masked_logits.shape[1], device=masked_logits.device)
+            for i_expert in range(num_total_experts):
+                if model.is_expert_in_gpu(i_layer, i_expert):
+                    mask[i_expert] = 1.0
+            
+            # Apply mask to router logits
+            masked_logits = masked_logits * mask.unsqueeze(0)
+            
+            # Compute new routing weights with masked logits
+            topk_weights, topk_ids = fused_topk(
+                hidden_states, masked_logits, topk, renormalize=renormalize
+            )
+            
+            # Count how many GPU experts we're keeping
+            gpu_experts_count = 0
+            for i_expert in range(num_total_experts):
+                if model.is_expert_in_gpu(i_layer, i_expert):
+                    gpu_experts_count += 1
+            
+            num_experts_to_keep = gpu_experts_count
 
-        if policy == "simple":
+        elif policy == "simple":
             num_experts_to_keep = 4  # Keep only 4 experts
             num_experts_to_drop = num_total_experts - num_experts_to_keep
             
@@ -145,6 +170,9 @@ def fused_topk(
     gating_output = torch.softmax(gating_output, dim=-1)
     topk_weights, topk_ids = torch.topk(gating_output, topk, dim=-1)
     
+    # Convert topk_ids to int64 to match PyTorch's native top-k
+    topk_ids = topk_ids.to(torch.int64)
+    
     if renormalize:
         topk_weights = topk_weights / topk_weights.sum(dim=-1, keepdim=True)
     
@@ -154,7 +182,9 @@ def extract_voting_and_mask(topk_ids, gating_output, num_experts_to_drop):
     # Count votes for each expert
     expert_votes = torch.zeros(gating_output.shape[1], device=gating_output.device)
     for i in range(topk_ids.shape[1]):
-        expert_votes.scatter_add_(0, topk_ids[:, i], torch.ones_like(topk_ids[:, i]))
+        # Fix dtype mismatch - convert ones to match expert_votes dtype
+        ones = torch.ones_like(topk_ids[:, i], dtype=expert_votes.dtype)
+        expert_votes.scatter_add_(0, topk_ids[:, i], ones)
     
     # Get least voted experts
     _, drop_indices = torch.topk(expert_votes, num_experts_to_drop, largest=False)
@@ -170,7 +200,9 @@ def optimize_expert_selection(topk_ids, topk_weights, gating_output, num_experts
     # Count votes for each expert
     expert_votes = torch.zeros(num_experts, device=gating_output.device)
     for i in range(topk_ids.shape[1]):
-        expert_votes.scatter_add_(0, topk_ids[:, i], topk_weights[:, i])
+        # Ensure consistent dtype for scatter_add_
+        weights = topk_weights[:, i].to(expert_votes.dtype)
+        expert_votes.scatter_add_(0, topk_ids[:, i], weights)
     
     # Calculate threshold based on percentile
     threshold = torch.quantile(expert_votes, threshold_percentile)
@@ -189,7 +221,9 @@ def optimize_expert_selection_parameterized(topk_ids, topk_weights, gating_outpu
     # Similar to optimize_expert_selection but with beta and alpha parameters
     expert_votes = torch.zeros(num_experts, device=gating_output.device)
     for i in range(topk_ids.shape[1]):
-        expert_votes.scatter_add_(0, topk_ids[:, i], topk_weights[:, i])
+        # Ensure consistent dtype for scatter_add_
+        weights = topk_weights[:, i].to(expert_votes.dtype)
+        expert_votes.scatter_add_(0, topk_ids[:, i], weights)
     
     # Use beta to scale the threshold
     threshold = beta * torch.mean(expert_votes)
