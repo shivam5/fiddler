@@ -98,7 +98,7 @@ def custom_routing_function(hidden_states: torch.Tensor,
 
         elif policy == "advanced_parametrized":
             beta = 0.5  # Default beta
-            alpha = 2.0  # Default alpha
+            alpha = 1.0  # Default alpha
 
             num_experts_to_keep, num_unique_experts = optimize_expert_selection_parameterized(
                 topk_ids=topk_ids_initial,
