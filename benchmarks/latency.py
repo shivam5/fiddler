@@ -5,6 +5,8 @@ import json
 import os
 import random
 import sys
+import time
+from datetime import datetime
 
 sys.path.append("../src")
 from fiddler import FiddlerMixtral
@@ -41,6 +43,30 @@ if __name__ == "__main__":
         choices=["do-nothing", "simple", "advanced", "advanced_parametrized", "rotate", "rotate_based_on_confidence"],
         help="Routing policy to use for expert selection.",
     )
+    parser.add_argument(
+        "--output",
+        type=str,
+        default="results.json",
+        help="Output file to store results.",
+    )
+    parser.add_argument(
+        "--input_token",
+        type=int,
+        default=512,
+        help="Number of input tokens.",
+    )
+    parser.add_argument(
+        "--output_token",
+        type=int,
+        default=128,
+        help="Number of output tokens to generate.",
+    )
+    parser.add_argument(
+        "--num_samples",
+        type=int,
+        default=3,
+        help="Number of samples to run for each configuration.",
+    )
 
     args = parser.parse_args()
 
@@ -65,38 +91,100 @@ if __name__ == "__main__":
 
     random.seed(0)
     random.shuffle(texts)
+    
     model = FiddlerMixtral(args)
-    n_sample = 10
-
-    # for input_token in [16, 32, 64, 128]:
-    #     for output_token in [16, 32, 64, 128, 256, 512]:
-    for input_token in [512]:
-        for output_token in [128]:
-            idx_text = 0
-            prefill_time_sum, decode_time_sum, hit_rate_sum = 0, 0, 0
-            for _ in range(n_sample):
-                # Collect batch_size texts
-                batch_texts = []
-                while len(batch_texts) < args.batch_size:
-                    text = texts[idx_text]
-                    idx_text += 1
-                    if len(text.split()) >= input_token:
-                        # enough input length
-                        batch_texts.append(text)
-                
-                prefill_time, decode_time, hit_rate = model.generate(
-                    batch_texts, output_token=output_token, input_token=input_token
-                )
-                prefill_time_sum += prefill_time
-                decode_time_sum += decode_time
-                hit_rate_sum += hit_rate
-            # write to file
-            with open("latency.txt", "a") as f:
-                f.write(
-                    f"input_token: {input_token}, output_token: {output_token}, "
-                    f"batch_size: {args.batch_size}, "
-                    f"prefill_time: {prefill_time_sum / n_sample}, "
-                    f"decode_time: {decode_time_sum / n_sample}, "
-                    f"hit_rate: {hit_rate_sum / n_sample},"
-                    f"{output_token * args.batch_size * n_sample/ (prefill_time_sum + decode_time_sum):.2f}token/s\n"
-                )
+    
+    # Metrics to collect
+    metrics = {
+        "timestamp": datetime.now().isoformat(),
+        "config": {
+            "model": args.model,
+            "cpu_offload": args.cpu_offload,
+            "batch_size": args.batch_size,
+            "beam_num": args.beam_num,
+            "routing_policy": args.routing_policy,
+            "input_token": args.input_token,
+            "output_token": args.output_token,
+        },
+        "results": []
+    }
+    
+    # Run the experiments
+    input_token = args.input_token
+    output_token = args.output_token
+    
+    idx_text = 0
+    for sample_idx in range(args.num_samples):
+        print(f"Running sample {sample_idx+1}/{args.num_samples}")
+        
+        # Collect batch_size texts
+        batch_texts = []
+        while len(batch_texts) < args.batch_size:
+            text = texts[idx_text % len(texts)]
+            idx_text += 1
+            if len(text.split()) >= input_token:
+                # enough input length
+                batch_texts.append(text)
+        
+        # Add custom attributes to track detailed expert metrics
+        model.gpu_experts_processed = 0
+        model.cpu_experts_processed = 0
+        model.total_experts_processed = 0
+        
+        # Start timing
+        start_time = time.time()
+        prefill_time, decode_time, hit_rate = model.generate(
+            batch_texts, output_token=output_token, input_token=input_token
+        )
+        total_time = time.time() - start_time
+        
+        # Record results
+        metrics["results"].append({
+            "sample_idx": sample_idx,
+            "prefill_time": prefill_time,
+            "decode_time": decode_time,
+            "total_time": total_time,
+            "hit_rate": hit_rate,
+            "throughput": output_token / decode_time,
+            "total_experts_processed": getattr(model, "total_experts_processed", 0),
+            "gpu_experts_processed": getattr(model, "gpu_experts_processed", 0),
+            "cpu_experts_processed": getattr(model, "cpu_experts_processed", 0),
+            "gpu_expert_percentage": getattr(model, "gpu_experts_processed", 0) / max(1, getattr(model, "total_experts_processed", 1))
+        })
+        
+        print(f"Sample {sample_idx+1} complete: Prefill: {prefill_time:.2f}s, Decode: {decode_time:.2f}s, Hit rate: {hit_rate:.2%}")
+    
+    # Calculate averages
+    num_samples = len(metrics["results"])
+    if num_samples > 0:
+        avg_prefill_time = sum(r["prefill_time"] for r in metrics["results"]) / num_samples
+        avg_decode_time = sum(r["decode_time"] for r in metrics["results"]) / num_samples
+        avg_hit_rate = sum(r["hit_rate"] for r in metrics["results"]) / num_samples
+        avg_throughput = sum(r["throughput"] for r in metrics["results"]) / num_samples
+        avg_gpu_expert_pct = sum(r["gpu_expert_percentage"] for r in metrics["results"]) / num_samples
+        
+        metrics["summary"] = {
+            "avg_prefill_time": avg_prefill_time,
+            "avg_decode_time": avg_decode_time,
+            "avg_total_time": avg_prefill_time + avg_decode_time,
+            "avg_hit_rate": avg_hit_rate,
+            "avg_throughput": avg_throughput,
+            "avg_gpu_expert_percentage": avg_gpu_expert_pct,
+            "tokens_per_second": output_token * args.batch_size / avg_decode_time
+        }
+        
+        print("\nSummary:")
+        print(f"Routing Policy: {args.routing_policy}, Batch Size: {args.batch_size}")
+        print(f"Avg Prefill Time: {avg_prefill_time:.2f}s")
+        print(f"Avg Decode Time: {avg_decode_time:.2f}s")
+        print(f"Avg Hit Rate: {avg_hit_rate:.2%}")
+        print(f"Tokens/sec: {output_token * args.batch_size / avg_decode_time:.2f}")
+        print(f"GPU Expert Usage: {avg_gpu_expert_pct:.2%}")
+    
+    # Save results to file
+    result_file = args.output
+    os.makedirs(os.path.dirname(os.path.abspath(result_file)), exist_ok=True)
+    with open(result_file, 'w') as f:
+        json.dump(metrics, f, indent=2)
+    
+    print(f"Results saved to {result_file}")

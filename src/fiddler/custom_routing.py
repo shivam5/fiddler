@@ -4,6 +4,13 @@ def custom_routing_function(hidden_states: torch.Tensor,
                             router_logits: torch.Tensor,
                             topk: int,
                             renormalize: bool):
+    # Try to get the policy from the caller's model instance
+    # This is a bit of a hack, but it works
+    import inspect
+    frame = inspect.currentframe().f_back
+    model = frame.f_locals.get('self', None)
+    policy = getattr(model, 'routing_policy', 'do-nothing')
+    
     # Determine if it's prefill or decode phase based on sequence length
     # Prefill phase has sequence length 512, decode phase has sequence length 128
     is_prefill = hidden_states.shape[0] == 512
@@ -14,10 +21,10 @@ def custom_routing_function(hidden_states: torch.Tensor,
     num_experts_per_token = 2  # We use top-2 experts
     num_experts_to_keep = 8  # Default to keeping all experts
     min_experts = 2  # Minimum number of experts to keep
-    policy = "do-nothing"  # Default policy
     threshold_percentile = 0.5  # Default threshold
     count_of_topk = 2  # Default count
 
+    print(f"Routing policy: {policy}")
     if policy == "do-nothing":
         topk_weights, topk_ids = fused_topk(
             hidden_states, router_logits, topk, renormalize

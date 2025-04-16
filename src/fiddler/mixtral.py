@@ -400,6 +400,9 @@ class FiddlerMixtral:
         input_ids = torch.cat(input_ids_list, dim=0)
         position_ids = torch.cat(position_ids_list, dim=0)
 
+        # Log initial info before timing
+        print(f"Starting generation of {output_token} tokens for batch size {input_ids.shape[0]}...")
+        
         tick = time.time()
         is_decode = False
         prefill_time, decode_time = 0, 0
@@ -407,19 +410,9 @@ class FiddlerMixtral:
         search_start = False
         probs = torch.full((input_ids.shape[0], 1), 1.0)
 
-        print(f"Starting generation of {output_token} tokens for batch size {input_ids.shape[0]}...")
         for i_token in range(output_token):
-            if i_token % 5 == 0:  # Log every 5 tokens
-                print(f"Generating token {i_token + 1}/{output_token}")
-                if is_decode:
-                    print(f"Current outputs: {[s[:50] + '...' for s in decode_strings]}")
-
-            if self.beam_width == 1:
-                print([self.tokenizer.decode(ids) for ids in input_ids])
-            if is_decode:
-                for i in range(input_ids.shape[0]):
-                    decode_strings[i] += " " + self.tokenizer.decode(input_ids[i, :])
-
+            # Remove all per-token logging
+            
             logits = self.mixtral_forward(input_ids, position_ids, is_decode)
 
             logits = logits.to("cpu")
@@ -466,10 +459,9 @@ class FiddlerMixtral:
         probs = probs.view(-1, self.beam_width)
         max_ids = torch.argmax(probs, dim=-1)
 
+        # Log completion info after timing
         print("\nGeneration complete!")
         print("--------------------")
-        print(f"Inputs: {texts}")
-        print(f"Outputs: {[decode_strings[i] for i in max_ids]}")
         print(f"Prefill time: {prefill_time:.2f}s")
         print(f"Decode time: {decode_time:.2f}s")
         print(f"Expert hit rate: {self.cnt_expert_hit / self.cnt_expert_all:.2%}")
@@ -701,11 +693,16 @@ class FiddlerMixtral:
 
         self.present_key_value = present_key_value
         
+        # Update object attributes for metrics collection
+        self.total_experts_processed = total_experts_processed
+        self.gpu_experts_processed = gpu_experts_processed
+        self.cpu_experts_processed = cpu_experts_processed
+        
         # Log expert processing statistics
-        print(f"\nExpert Processing Stats:")
-        print(f"Total experts processed: {total_experts_processed}")
-        print(f"Experts on GPU: {gpu_experts_processed} ({gpu_experts_processed/total_experts_processed:.1%})")
-        print(f"Experts on CPU: {cpu_experts_processed} ({cpu_experts_processed/total_experts_processed:.1%})")
+        # print(f"\nExpert Processing Stats:")
+        # print(f"Total experts processed: {total_experts_processed}")
+        # print(f"Experts on GPU: {gpu_experts_processed} ({gpu_experts_processed/total_experts_processed:.1%})")
+        # print(f"Experts on CPU: {cpu_experts_processed} ({cpu_experts_processed/total_experts_processed:.1%})")
         
         return lm_logis
 
