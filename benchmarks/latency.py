@@ -68,6 +68,11 @@ if __name__ == "__main__":
         default=3,
         help="Number of samples to run for each configuration.",
     )
+    parser.add_argument(
+        "--skip_versioning",
+        action="store_true",
+        help="Skip automatic versioning of results",
+    )
 
     args = parser.parse_args()
 
@@ -243,11 +248,14 @@ if __name__ == "__main__":
     
     print(f"Results saved to {result_file}")
     
-    # Run versioning script if it exists
-    version_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "version_results.sh")
-    if os.path.exists(version_script) and os.access(version_script, os.X_OK):
-        print("\nVersioning results...")
-        subprocess.run([version_script], check=True)
-        print("Results versioned successfully.")
+    # Only version results if not skipped
+    if not args.skip_versioning:
+        version_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "version_results.sh")
+        if os.path.exists(version_script) and os.access(version_script, os.X_OK):
+            print("\nVersioning results...")
+            subprocess.run([version_script], check=True)
+            print("Results versioned successfully.")
+        else:
+            print("\nSkipping versioning (version_results.sh not found or not executable)")
     else:
-        print("\nSkipping versioning (version_results.sh not found or not executable)")
+        print("\nSkipping versioning (--skip_versioning flag used)")
