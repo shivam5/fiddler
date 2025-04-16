@@ -114,8 +114,8 @@ if __name__ == "__main__":
     output_token = args.output_token
     
     idx_text = 0
-    for sample_idx in range(args.num_samples):
-        print(f"Running sample {sample_idx+1}/{args.num_samples}")
+    for batch_num in range(args.num_samples // args.batch_size):
+        print(f"Running batch {batch_num+1}/{args.num_samples // args.batch_size}")
         
         # Collect batch_size texts
         batch_texts = []
@@ -139,7 +139,7 @@ if __name__ == "__main__":
         
         # Record results
         metrics["results"].append({
-            "sample_idx": sample_idx,
+            "batch_num": batch_num,
             "prefill_time": prefill_time,
             "decode_time": decode_time,
             "total_time": prefill_time + decode_time,
@@ -165,28 +165,32 @@ if __name__ == "__main__":
                 print(f"\nExperts per token: {expert_stats['avg_experts_per_token']:.2f}")
                 print(f"  (This should be close to 2.0 for top-2 routing)")
             
+            if "avg_unique_experts_per_batch" in expert_stats:
+                print(f"\nUnique experts per batch: {expert_stats['avg_unique_experts_per_batch']:.2f}")
+                print(f"  (This is the average number of unique experts used across the entire batch)")
+            
             print(f"\nAverage unique experts used per layer: {expert_stats['avg_experts_per_layer']:.2f} out of 8")
             print(f"  - On GPU: {expert_stats['avg_gpu_experts_per_layer']:.2f}")
             print(f"  - On CPU: {expert_stats['avg_cpu_experts_per_layer']:.2f}")
             
             # Print the layers with highest/lowest expert utilization
-            layer_experts_per_token = [(layer_idx, stats.get("experts_per_token", 0)) 
+            layer_experts_per_batch = [(layer_idx, stats.get("unique_experts_per_batch", 0)) 
                                 for layer_idx, stats in expert_stats["by_layer"].items()]
-            layer_experts_per_token.sort(key=lambda x: x[1], reverse=True)
+            layer_experts_per_batch.sort(key=lambda x: x[1], reverse=True)
             
-            print(f"\nLayers with highest experts-per-token:")
-            for layer_idx, experts_per_token in layer_experts_per_token[:3]:
+            print(f"\nLayers with highest unique experts per batch:")
+            for layer_idx, unique_experts in layer_experts_per_batch[:3]:
                 layer_stats = expert_stats["by_layer"][layer_idx]
-                print(f"  Layer {layer_idx}: {experts_per_token:.2f} experts per token, " + 
+                print(f"  Layer {layer_idx}: {unique_experts} unique experts across batch, " + 
                       f"{layer_stats['unique_experts_used']} unique experts used")
                 
-            print(f"\nLayers with lowest experts-per-token:")
-            for layer_idx, experts_per_token in layer_experts_per_token[-3:]:
+            print(f"\nLayers with lowest unique experts per batch:")
+            for layer_idx, unique_experts in layer_experts_per_batch[-3:]:
                 layer_stats = expert_stats["by_layer"][layer_idx]
-                print(f"  Layer {layer_idx}: {experts_per_token:.2f} experts per token, " + 
+                print(f"  Layer {layer_idx}: {unique_experts} unique experts across batch, " + 
                       f"{layer_stats['unique_experts_used']} unique experts used")
         
-        print(f"Sample {sample_idx+1} complete: Prefill: {prefill_time:.2f}s, Decode: {decode_time:.2f}s, Hit rate: {hit_rate:.2%}")
+        print(f"Batch {batch_num+1} complete: Prefill: {prefill_time:.2f}s, Decode: {decode_time:.2f}s, Hit rate: {hit_rate:.2%}")
     
     # Calculate averages
     num_samples = len(metrics["results"])
@@ -197,6 +201,18 @@ if __name__ == "__main__":
         avg_throughput = sum(r["throughput"] for r in metrics["results"]) / num_samples
         avg_gpu_expert_pct = sum(r["gpu_expert_percentage"] for r in metrics["results"]) / num_samples
         
+        # Calculate average unique experts per batch if available
+        avg_unique_experts_per_batch = 0
+        count_with_metric = 0
+        for r in metrics["results"]:
+            expert_utilization = r.get("expert_utilization", {})
+            if "avg_unique_experts_per_batch" in expert_utilization:
+                avg_unique_experts_per_batch += expert_utilization["avg_unique_experts_per_batch"]
+                count_with_metric += 1
+        
+        if count_with_metric > 0:
+            avg_unique_experts_per_batch /= count_with_metric
+        
         metrics["summary"] = {
             "avg_prefill_time": avg_prefill_time,
             "avg_decode_time": avg_decode_time,
@@ -204,7 +220,8 @@ if __name__ == "__main__":
             "avg_hit_rate": avg_hit_rate,
             "avg_throughput": avg_throughput,
             "avg_gpu_expert_percentage": avg_gpu_expert_pct,
-            "tokens_per_second": output_token * args.batch_size / avg_decode_time
+            "tokens_per_second": output_token * args.batch_size / avg_decode_time,
+            "avg_unique_experts_per_batch": avg_unique_experts_per_batch
         }
         
         print("\nSummary:")
@@ -214,6 +231,8 @@ if __name__ == "__main__":
         print(f"Avg Hit Rate: {avg_hit_rate:.2%}")
         print(f"Tokens/sec: {output_token * args.batch_size / avg_decode_time:.2f}")
         print(f"GPU Expert Usage: {avg_gpu_expert_pct:.2%}")
+        if count_with_metric > 0:
+            print(f"Avg Unique Experts Per Batch: {avg_unique_experts_per_batch:.2f}")
     
     # Save results to file
     result_file = args.output

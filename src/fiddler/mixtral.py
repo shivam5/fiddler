@@ -517,16 +517,26 @@ class FiddlerMixtral:
             "total": {"all": 0, "gpu": 0, "cpu": 0},
             "by_layer": {},
             "decode_step": is_decode,  # Flag to indicate if this is a decode step
-            "tokens_per_batch": inps.shape[0]  # Number of tokens being processed
+            "tokens_per_batch": inps.shape[0],  # Number of tokens being processed
+            "unique_experts_per_batch": {}  # Track unique experts used across the entire batch
         }
 
         # Count experts activated per token in batch
         total_experts_per_token = 0
         total_tokens = 0
+        # Track unique experts used per batch across all layers
+        batch_unique_experts_total = 0
 
         for i_layer, layer in enumerate(self.model.layers):
             # Initialize layer stats
-            layer_stats = {"unique_experts_used": 0, "experts_on_gpu": 0, "experts_on_cpu": 0, "tokens_processed": 0, "experts_per_token": 0}
+            layer_stats = {
+                "unique_experts_used": 0, 
+                "experts_on_gpu": 0, 
+                "experts_on_cpu": 0, 
+                "tokens_processed": 0, 
+                "experts_per_token": 0,
+                "unique_experts_per_batch": 0  # New metric to track unique experts per batch
+            }
             expert_stats["by_layer"][i_layer] = layer_stats
             
             original_inps_shape = inps.shape
@@ -563,6 +573,14 @@ class FiddlerMixtral:
                 routing_weights = F.softmax(router_logits, dim=1)
                 routing_weights, selected_experts = torch.topk(routing_weights, 2, dim=-1)
                 routing_weights /= routing_weights.sum(dim=-1, keepdim=True)
+
+            # Track all unique experts across the entire batch for this layer
+            unique_experts_batch = set()
+            for i in range(selected_experts.shape[0]):  # Iterate through batch
+                for j in range(selected_experts.shape[1]):  # Iterate through top-k experts
+                    unique_experts_batch.add(selected_experts[i, j].item())
+            layer_stats["unique_experts_per_batch"] = len(unique_experts_batch)
+            batch_unique_experts_total += len(unique_experts_batch)
 
             # intermediate variable to store the output of experts
             inps_after_experts = torch.zeros_like(inps, device=self.dev)
@@ -649,7 +667,6 @@ class FiddlerMixtral:
                 expert_stats["total"]["all"] += len(experts_used)
                 expert_stats["total"]["gpu"] += len(experts_on_gpu)
                 expert_stats["total"]["cpu"] += len(experts_on_cpu)
-
             else:
                 # prefill stage with offloading
                 expert_mask = torch.nn.functional.one_hot(
@@ -714,6 +731,8 @@ class FiddlerMixtral:
                 layer_stats["experts_used"] = list(experts_used)
                 layer_stats["gpu_experts"] = list(experts_on_gpu)
                 layer_stats["cpu_experts"] = list(experts_on_cpu)
+                
+                # We already calculated unique_experts_per_batch above, so no need to do it again
                 
                 # Update total statistics
                 expert_stats["total"]["all"] += len(experts_used)
@@ -813,6 +832,9 @@ class FiddlerMixtral:
             expert_stats["avg_experts_per_token"] = total_experts_per_token / len(self.model.layers)
         else:
             expert_stats["avg_experts_per_token"] = 0
+        
+        # Calculate average unique experts per batch across all layers
+        expert_stats["avg_unique_experts_per_batch"] = batch_unique_experts_total / len(self.model.layers)
                 
         return lm_logis
 
