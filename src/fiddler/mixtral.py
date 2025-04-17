@@ -8,6 +8,16 @@ import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_sequence
 import transformers
 
+# Check if torch.compile is available
+try:
+    from torch import compile as torch_compile
+    COMPILE_AVAILABLE = True
+except ImportError:
+    COMPILE_AVAILABLE = False
+    # Define dummy decorator for compatibility
+    def torch_compile(fn, **kwargs):
+        return fn
+
 
 class FiddlerMixtral:
     def __init__(self, args):
@@ -36,6 +46,20 @@ class FiddlerMixtral:
        
         # Store gpu_boost_factor if provided
         self.gpu_boost_factor = getattr(args, 'gpu_boost_factor', 5.0)
+        
+        # Enable torch.compile for optimization
+        self.use_compile = getattr(args, 'use_compile', False)
+        
+        # Initialize compiled forward method if enabled
+        if self.use_compile and COMPILE_AVAILABLE:
+            print("Compiling mixtral_forward method...")
+            self._compiled_mixtral_forward = torch_compile(
+                self.mixtral_forward,
+                mode="reduce-overhead",
+                fullgraph=False,  # fullgraph=True can cause issues with dynamic shapes
+                dynamic=True,     # Handle dynamic batch sizes
+            )
+            print("Compilation complete.")
 
         # TODO: find this value based on device config
         self.latency_cpu = 7
@@ -425,7 +449,11 @@ class FiddlerMixtral:
             #     for i in range(input_ids.shape[0]):
             #         decode_strings[i] += " " + self.tokenizer.decode(input_ids[i, :])
 
-            logits = self.mixtral_forward(input_ids, position_ids, is_decode)
+            # Use compiled forward if available and enabled
+            if self.use_compile and COMPILE_AVAILABLE and hasattr(self, '_compiled_mixtral_forward'):
+                logits = self._compiled_mixtral_forward(input_ids, position_ids, is_decode)
+            else:
+                logits = self.mixtral_forward(input_ids, position_ids, is_decode)
 
             logits = logits.to("cpu")
             # logits.shape: (batch_size, seq_len, vocab_size)
@@ -565,7 +593,12 @@ class FiddlerMixtral:
                     hidden_states=inps,
                     router_logits=router_logits,
                     topk=2,  # We use top-2 experts
-                    renormalize=True
+                    renormalize=True,
+                    policy=self.routing_policy,
+                    layer_idx=i_layer,
+                    use_compile=self.use_compile,
+                    is_expert_in_gpu_fn=self.is_expert_in_gpu,
+                    gpu_boost_factor=self.gpu_boost_factor
                 )
                 # Ensure correct dtypes
                 if selected_experts.dtype != torch.int64:

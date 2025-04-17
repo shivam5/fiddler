@@ -7,9 +7,101 @@ import random
 import sys
 import time
 from datetime import datetime
+import torch
+import pandas as pd
+import numpy as np
+from tabulate import tabulate
+from pathlib import Path
+import traceback
 
 sys.path.append("../src")
 from fiddler import FiddlerMixtral
+
+# Check if torch.compile is available
+try:
+    import torch._dynamo
+    COMPILE_AVAILABLE = True
+except ImportError:
+    COMPILE_AVAILABLE = False
+
+def format_metrics(metrics, include_raw=False):
+    """Format metrics for display."""
+    result = {}
+    for k, v in metrics.items():
+        if isinstance(v, (int, float)):
+            result[k] = round(v, 2)
+        else:
+            result[k] = v
+            
+    # Compute derived metrics
+    if "prefill_time" in metrics and "decode_time" in metrics and "output_token" in metrics:
+        # Latency = prefill + decode
+        result["latency_s"] = round(metrics["prefill_time"] + metrics["decode_time"], 2)
+        
+        # Throughput = tokens / latency
+        result["throughput_tok_per_s"] = round(metrics["output_token"] / result["latency_s"], 2)
+    
+    if include_raw:
+        result.update(metrics)
+        
+    return result
+
+def run_benchmark(model, texts, args):
+    """Run benchmark with specified parameters."""
+    metrics = {}
+    
+    # Record basic parameters
+    metrics["batch_size"] = len(texts)
+    metrics["input_token"] = args.input_token
+    metrics["output_token"] = args.output_token
+    metrics["policy"] = args.policy
+    metrics["use_compile"] = args.compile
+    
+    # Warmup
+    if args.warmup > 0:
+        print(f"Warming up for {args.warmup} iterations...")
+        for _ in range(args.warmup):
+            model.generate(
+                texts=texts[0],
+                output_token=5,
+                input_token=args.input_token,
+                policy=args.policy
+            )
+    
+    # Run actual benchmark
+    try:
+        batch_texts = []
+        for i in range(metrics["batch_size"]):
+            batch_texts.append(texts[i % len(texts)])
+        
+        completions, prefill_time, decode_time, hit_rate = model.generate(
+            texts=batch_texts,
+            output_token=args.output_token,
+            input_token=args.input_token,
+            policy=args.policy
+        )
+        
+        # Record results
+        metrics["prefill_time"] = prefill_time
+        metrics["decode_time"] = decode_time
+        metrics["hit_rate"] = hit_rate
+        metrics["success"] = True
+        
+        # Format for display
+        print("\nGenerated completion:")
+        if len(batch_texts) == 1:
+            print(f"Input: {batch_texts[0]}")
+            print(f"Output: {completions[0]}")
+        else:
+            print(f"Generated {len(completions)} completions")
+            
+    except Exception as e:
+        print(f"Error during generation: {e}")
+        traceback.print_exc()
+        metrics["error"] = str(e)
+        metrics["success"] = False
+    
+    return metrics, format_metrics(metrics)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -50,6 +142,12 @@ if __name__ == "__main__":
         help="Boost factor for GPU experts in gpu_boosted policy (theta value).",
     )
     parser.add_argument(
+        "--use_compile",
+        action="store_true",
+        default=False,
+        help="Use torch.compile to optimize routing functions.",
+    )
+    parser.add_argument(
         "--output",
         type=str,
         default="results.json",
@@ -73,6 +171,7 @@ if __name__ == "__main__":
         default=3,
         help="Number of samples to run for each configuration.",
     )
+    parser.add_argument("--warmup", type=int, default=1, help="Number of warmup iterations.")
 
     args = parser.parse_args()
 

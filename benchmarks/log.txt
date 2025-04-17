@@ -1,0 +1,161 @@
+/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/huggingface_hub/file_download.py:896: FutureWarning: `resume_download` is deprecated and will be removed in version 1.0.0. Downloads always resume when possible. If you want to force a new download, use `force_download=True`.
+  warnings.warn(
+Loading checkpoint shards:   0%|          | 0/19 [00:00<?, ?it/s]Loading checkpoint shards:   5%|▌         | 1/19 [00:00<00:06,  2.76it/s]Loading checkpoint shards:  11%|█         | 2/19 [00:00<00:05,  2.93it/s]Loading checkpoint shards:  16%|█▌        | 3/19 [00:00<00:05,  3.05it/s]Loading checkpoint shards:  21%|██        | 4/19 [00:01<00:04,  3.19it/s]Loading checkpoint shards:  26%|██▋       | 5/19 [00:01<00:04,  3.24it/s]Loading checkpoint shards:  32%|███▏      | 6/19 [00:01<00:04,  3.19it/s]Loading checkpoint shards:  37%|███▋      | 7/19 [00:02<00:03,  3.15it/s]Loading checkpoint shards:  42%|████▏     | 8/19 [00:02<00:03,  3.15it/s]Loading checkpoint shards:  47%|████▋     | 9/19 [00:02<00:03,  3.22it/s]Loading checkpoint shards:  53%|█████▎    | 10/19 [00:03<00:02,  3.25it/s]Loading checkpoint shards:  58%|█████▊    | 11/19 [00:03<00:02,  3.23it/s]Loading checkpoint shards:  63%|██████▎   | 12/19 [00:03<00:02,  3.17it/s]Loading checkpoint shards:  68%|██████▊   | 13/19 [00:04<00:01,  3.11it/s]Loading checkpoint shards:  74%|███████▎  | 14/19 [00:04<00:01,  3.18it/s]Loading checkpoint shards:  79%|███████▉  | 15/19 [00:04<00:01,  3.25it/s]Loading checkpoint shards:  84%|████████▍ | 16/19 [00:05<00:00,  3.26it/s]Loading checkpoint shards:  89%|████████▉ | 17/19 [00:05<00:00,  3.20it/s]Loading checkpoint shards:  95%|█████████▍| 18/19 [00:05<00:00,  3.17it/s]Loading checkpoint shards: 100%|██████████| 19/19 [00:05<00:00,  3.17it/s]Loading checkpoint shards: 100%|██████████| 19/19 [00:05<00:00,  3.17it/s]
+Compiling mixtral_forward method...
+/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/overrides.py:110: UserWarning: 'has_cuda' is deprecated, please use 'torch.backends.cuda.is_built()'
+  torch.has_cuda,
+/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/overrides.py:111: UserWarning: 'has_cudnn' is deprecated, please use 'torch.backends.cudnn.is_available()'
+  torch.has_cudnn,
+/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/overrides.py:117: UserWarning: 'has_mps' is deprecated, please use 'torch.backends.mps.is_built()'
+  torch.has_mps,
+/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/overrides.py:118: UserWarning: 'has_mkldnn' is deprecated, please use 'torch.backends.mkldnn.is_available()'
+  torch.has_mkldnn,
+Compilation complete.
+Number of experts on GPU: 217/256
+Number of layers: 32, number of experts per layer: 8
+Model is ready.
+Running batch 1/1
+Starting generation of 128 tokens for batch size 4...
+Traceback (most recent call last):
+  File "/home/vimagupta123/shivam/fiddler/benchmarks/latency.py", line 148, in <module>
+    prefill_time, decode_time, hit_rate = model.generate(
+  File "/home/vimagupta123/shivam/fiddler/benchmarks/../src/fiddler/mixtral.py", line 454, in generate
+    logits = self._compiled_mixtral_forward(input_ids, position_ids, is_decode)
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 328, in _fn
+    return fn(*args, **kwargs)
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_dynamo/external_utils.py", line 17, in inner
+    return fn(*args, **kwargs)
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/utils/_contextlib.py", line 115, in decorate_context
+    return func(*args, **kwargs)
+  File "/home/vimagupta123/shivam/fiddler/benchmarks/../src/fiddler/mixtral.py", line 592, in mixtral_forward
+    routing_weights, selected_experts, num_experts_to_keep = custom_routing_function(
+  File "/home/vimagupta123/shivam/fiddler/benchmarks/../src/fiddler/custom_routing.py", line 172, in custom_routing_function
+    num_experts_to_keep, _ = optimize_expert_selection_parameterized(
+  File "/home/vimagupta123/shivam/fiddler/benchmarks/../src/fiddler/custom_routing.py", line 70, in optimize_expert_selection_parameterized
+    num_unique_experts = (expert_presence > 0).sum().item()
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py", line 490, in catch_errors
+    return callback(frame, cache_entry, hooks, frame_state)
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_dynamo/convert_frame.py", line 641, in _convert_frame
+    result = inner_convert(frame, cache_size, hooks, frame_state)
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_dynamo/convert_frame.py", line 133, in _fn
+    return fn(*args, **kwargs)
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_dynamo/convert_frame.py", line 389, in _convert_frame_assert
+    return _compile(
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_dynamo/convert_frame.py", line 569, in _compile
+    guarded_code = compile_inner(code, one_graph, hooks, transform)
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_dynamo/utils.py", line 189, in time_wrapper
+    r = func(*args, **kwargs)
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_dynamo/convert_frame.py", line 491, in compile_inner
+    out_code = transform_code_object(code, transform)
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_dynamo/bytecode_transformation.py", line 1028, in transform_code_object
+    transformations(instructions, code_options)
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_dynamo/convert_frame.py", line 458, in transform
+    tracer.run()
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_dynamo/symbolic_convert.py", line 2069, in run
+    super().run()
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_dynamo/symbolic_convert.py", line 719, in run
+    and self.step()
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_dynamo/symbolic_convert.py", line 683, in step
+    getattr(self, inst.opname)(inst)
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_dynamo/symbolic_convert.py", line 439, in wrapper
+    self.output.compile_subgraph(self, reason=reason)
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_dynamo/output_graph.py", line 857, in compile_subgraph
+    self.compile_and_call_fx_graph(tx, pass2.graph_output_vars(), root)
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/contextlib.py", line 79, in inner
+    return func(*args, **kwds)
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_dynamo/output_graph.py", line 957, in compile_and_call_fx_graph
+    compiled_fn = self.call_user_compiler(gm)
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_dynamo/utils.py", line 189, in time_wrapper
+    r = func(*args, **kwargs)
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_dynamo/output_graph.py", line 1024, in call_user_compiler
+    raise BackendCompilerFailed(self.compiler_fn, e).with_traceback(
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_dynamo/output_graph.py", line 1009, in call_user_compiler
+    compiled_fn = compiler_fn(gm, self.example_inputs())
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_dynamo/repro/after_dynamo.py", line 117, in debug_wrapper
+    compiled_gm = compiler_fn(gm, example_inputs)
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/__init__.py", line 1568, in __call__
+    return compile_fx(model_, inputs_, config_patches=self.config)
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_inductor/compile_fx.py", line 961, in compile_fx
+    return compile_fx(
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_inductor/compile_fx.py", line 1150, in compile_fx
+    return aot_autograd(
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_dynamo/backends/common.py", line 55, in compiler_fn
+    cg = aot_module_simplified(gm, example_inputs, **kwargs)
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_functorch/aot_autograd.py", line 3891, in aot_module_simplified
+    compiled_fn = create_aot_dispatcher_function(
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_dynamo/utils.py", line 189, in time_wrapper
+    r = func(*args, **kwargs)
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_functorch/aot_autograd.py", line 3429, in create_aot_dispatcher_function
+    compiled_fn = compiler_fn(flat_fn, fake_flat_args, aot_config, fw_metadata=fw_metadata)
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_functorch/aot_autograd.py", line 2212, in aot_wrapper_dedupe
+    return compiler_fn(flat_fn, leaf_flat_args, aot_config, fw_metadata=fw_metadata)
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_functorch/aot_autograd.py", line 2392, in aot_wrapper_synthetic_base
+    return compiler_fn(flat_fn, flat_args, aot_config, fw_metadata=fw_metadata)
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_functorch/aot_autograd.py", line 1573, in aot_dispatch_base
+    compiled_fw = compiler(fw_module, flat_args)
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_dynamo/utils.py", line 189, in time_wrapper
+    r = func(*args, **kwargs)
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_inductor/compile_fx.py", line 1092, in fw_compiler_base
+    return inner_compile(
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/contextlib.py", line 79, in inner
+    return func(*args, **kwds)
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_dynamo/repro/after_aot.py", line 80, in debug_wrapper
+    inner_compiled_fn = compiler_fn(gm, example_inputs)
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_inductor/debug.py", line 228, in inner
+    return fn(*args, **kwargs)
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/contextlib.py", line 79, in inner
+    return func(*args, **kwds)
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_inductor/compile_fx.py", line 54, in newFunction
+    return old_func(*args, **kwargs)
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_inductor/compile_fx.py", line 341, in compile_fx_inner
+    compiled_graph: CompiledFxGraph = fx_codegen_and_compile(
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_inductor/compile_fx.py", line 565, in fx_codegen_and_compile
+    compiled_fn = graph.compile_to_fn()
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_inductor/graph.py", line 970, in compile_to_fn
+    return self.compile_to_module().call
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_dynamo/utils.py", line 189, in time_wrapper
+    r = func(*args, **kwargs)
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_inductor/graph.py", line 941, in compile_to_module
+    mod = PyCodeCache.load_by_key_path(key, path, linemap=linemap)
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_inductor/codecache.py", line 1139, in load_by_key_path
+    exec(code, mod.__dict__, mod.__dict__)
+  File "/var/tmp/torchinductor_vimagupta123/34/c34vd2mudymwzrd4iksrhfiju5sispljnp5qfcumgs6b7v3ndppj.py", line 257, in <module>
+    async_compile.wait(globals())
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_inductor/codecache.py", line 1418, in wait
+    scope[key] = result.result()
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/site-packages/torch/_inductor/codecache.py", line 1277, in result
+    self.future.result()
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/concurrent/futures/_base.py", line 458, in result
+    return self.__get_result()
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/concurrent/futures/_base.py", line 403, in __get_result
+    raise self._exception
+torch._dynamo.exc.BackendCompilerFailed: backend='inductor' raised:
+CompilationError: at 7:30:def triton_(in_ptr0, out_ptr0, ks0, xnumel, rnumel, XBLOCK : tl.constexpr, RBLOCK : tl.constexpr):
+    xoffset = tl.program_id(0) * XBLOCK
+    xindex = xoffset + tl.arange(0, XBLOCK)[:, None]
+    xmask = xindex < xnumel
+    rbase = tl.arange(0, RBLOCK)[None, :]
+    x0 = xindex
+    tmp0 = tl.load(in_ptr0 + (r1 + (ks0*x0)), xmask).to(tl.float32)
+                              ^
+NameError('r1 is not defined')
+
+Set TORCH_LOGS="+dynamo" and TORCHDYNAMO_VERBOSE=1 for more information
+
+
+You can suppress this exception and fall back to eager by setting:
+    import torch._dynamo
+    torch._dynamo.config.suppress_errors = True
+
+Running experiment: batch_size=4, policy=advanced_parametrized_compiled
+Command: python latency.py --batch_size 4 --routing_policy advanced_parametrized --input_token 512 --output_token 128 --num_samples 4 --output /home/vimagupta123/shivam/fiddler/benchmarks/runs/run_8/results/bs4_policy_advanced_parametrized_compiled_20250417_160859.json --use_compile
+Traceback (most recent call last):
+  File "/home/vimagupta123/shivam/fiddler/benchmarks/run_experiments.py", line 323, in <module>
+    main() 
+  File "/home/vimagupta123/shivam/fiddler/benchmarks/run_experiments.py", line 293, in main
+    result_file = run_experiment(
+  File "/home/vimagupta123/shivam/fiddler/benchmarks/run_experiments.py", line 60, in run_experiment
+    subprocess.run(cmd, check=True)
+  File "/home/vimagupta123/shivam/fiddler/fiddler_env2/lib/python3.10/subprocess.py", line 526, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['python', 'latency.py', '--batch_size', '4', '--routing_policy', 'advanced_parametrized', '--input_token', '512', '--output_token', '128', '--num_samples', '4', '--output', '/home/vimagupta123/shivam/fiddler/benchmarks/runs/run_8/results/bs4_policy_advanced_parametrized_compiled_20250417_160859.json', '--use_compile']' returned non-zero exit status 1.
