@@ -81,6 +81,42 @@ def custom_routing_function(hidden_states: torch.Tensor,
             
             num_experts_to_keep = gpu_experts_count
 
+        elif policy == "gpu_boosted":
+            # Like advanced_parameterized but with a boost for GPU experts
+            # Get the current layer index from the model
+            i_layer = frame.f_locals.get('i_layer', 0)
+            theta = 5.0  # Boost factor for GPU experts
+            
+            # Boost weights for GPU experts
+            for i_expert in range(num_total_experts):
+                if model.is_expert_in_gpu(i_layer, i_expert):
+                    # Multiply by theta to increase importance of GPU experts
+                    masked_logits[:, i_expert] *= theta
+            
+            # Recompute initial topk after boosting GPU experts
+            topk_weights_initial, topk_ids_initial = fused_topk(
+                hidden_states, masked_logits, topk, renormalize=True
+            )
+            
+            # Apply parameterized expert selection like in advanced_parameterized
+            beta = 0.5
+            alpha = 1.0
+            
+            num_experts_to_keep, num_unique_experts = optimize_expert_selection_parameterized(
+                topk_ids=topk_ids_initial,
+                topk_weights=topk_weights_initial, 
+                gating_output=masked_logits,
+                num_experts=num_total_experts,
+                min_experts=min_experts,
+                topk=num_experts_per_token,
+                beta=beta,
+                alpha=alpha,
+            )
+            
+            topk_weights, topk_ids = fused_topk(
+                hidden_states, masked_logits, topk, renormalize=renormalize
+            )
+
         elif policy == "simple":
             num_experts_to_keep = 4  # Keep only 4 experts
             num_experts_to_drop = num_total_experts - num_experts_to_keep

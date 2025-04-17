@@ -14,7 +14,7 @@ import pandas as pd
 from datetime import datetime
 
 # current direcotory + runs + run_2
-run_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "runs", "run_2")
+run_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "runs", "run_6")
 
 
 def run_experiment(batch_size, routing_policy, input_token=512, output_token=128, num_samples=3):
@@ -201,7 +201,7 @@ def main():
     parser.add_argument("--batch_sizes", type=int, nargs="+", default=[4], 
                         help="Batch sizes to test")
     parser.add_argument("--policies", type=str, nargs="+", 
-                        default=["do-nothing", "advanced_parametrized", "gpu_only"],
+                        default=["gpu_boosted", "do-nothing", "advanced_parametrized", "gpu_only"],
                         # default=["do-nothing", "advanced", "advanced_parametrized", "gpu_only"],
                         # default=["do-nothing", "simple", "advanced", "rotate"],
                         help="Routing policies to test")

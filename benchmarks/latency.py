@@ -40,7 +40,7 @@ if __name__ == "__main__":
         "--routing_policy",
         type=str,
         default="do-nothing",
-        choices=["do-nothing", "simple", "advanced", "advanced_parametrized", "rotate", "rotate_based_on_confidence", "gpu_only"],
+        choices=["do-nothing", "simple", "advanced", "advanced_parametrized", "rotate", "rotate_based_on_confidence", "gpu_only", "gpu_boosted"],
         help="Routing policy to use for expert selection.",
     )
     parser.add_argument(

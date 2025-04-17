@@ -1,0 +1,753 @@
+{
+  "timestamp": "2025-04-17T03:19:07.543387",
+  "config": {
+    "model": "mistralai/Mixtral-8x7B-v0.1",
+    "cpu_offload": 1,
+    "batch_size": 4,
+    "beam_num": 1,
+    "routing_policy": "gpu_only",
+    "input_token": 512,
+    "output_token": 128
+  },
+  "results": [
+    {
+      "batch_num": 0,
+      "prefill_time": 6.362382888793945,
+      "decode_time": 34.167988777160645,
+      "total_time": 40.53037166595459,
+      "hit_rate": 1.0,
+      "throughput": 3.7461965009061555,
+      "total_experts_processed": 256,
+      "gpu_experts_processed": 217,
+      "cpu_experts_processed": 39,
+      "gpu_expert_percentage": 0.84765625,
+      "expert_utilization": {
+        "total": {
+          "all": 142,
+          "gpu": 142,
+          "cpu": 0
+        },
+        "by_layer": {
+          "0": {
+            "unique_experts_used": 5,
+            "experts_on_gpu": 5,
+            "experts_on_cpu": 0,
+            "tokens_processed": 4,
+            "experts_per_token": 2.0,
+            "unique_experts_per_batch": 5,
+            "experts_used": [
+              3,
+              4,
+              5,
+              6,
+              7
+            ],
+            "gpu_experts": [
+              3,
+              4,
+              5,
+              6,
+              7
+            ],
+            "cpu_experts": []
+          },
+          "1": {
+            "unique_experts_used": 5,
+            "experts_on_gpu": 5,
+            "experts_on_cpu": 0,
+            "tokens_processed": 4,
+            "experts_per_token": 2.0,
+            "unique_experts_per_batch": 5,
+            "experts_used": [
+              0,
+              2,
+              4,
+              6,
+              7
+            ],
+            "gpu_experts": [
+              0,
+              2,
+              4,
+              6,
+              7
+            ],
+            "cpu_experts": []
+          },
+          "2": {
+            "unique_experts_used": 5,
+            "experts_on_gpu": 5,
+            "experts_on_cpu": 0,
+            "tokens_processed": 4,
+            "experts_per_token": 2.0,
+            "unique_experts_per_batch": 5,
+            "experts_used": [
+              0,
+              1,
+              4,
+              5,
+              6
+            ],
+            "gpu_experts": [
+              0,
+              1,
+              4,
+              5,
+              6
+            ],
+            "cpu_experts": []
+          },
+          "3": {
+            "unique_experts_used": 5,
+            "experts_on_gpu": 5,
+            "experts_on_cpu": 0,
+            "tokens_processed": 4,
+            "experts_per_token": 2.0,
+            "unique_experts_per_batch": 5,
+            "experts_used": [
+              0,
+              1,
+              4,
+              6,
+              7
+            ],
+            "gpu_experts": [
+              0,
+              1,
+              4,
+              6,
+              7
+            ],
+            "cpu_experts": []
+          },
+          "4": {
+            "unique_experts_used": 6,
+            "experts_on_gpu": 6,
+            "experts_on_cpu": 0,
+            "tokens_processed": 4,
+            "experts_per_token": 2.0,
+            "unique_experts_per_batch": 6,
+            "experts_used": [
+              0,
+              1,
+              3,
+              5,
+              6,
+              7
+            ],
+            "gpu_experts": [
+              0,
+              1,
+              3,
+              5,
+              6,
+              7
+            ],
+            "cpu_experts": []
+          },
+          "5": {
+            "unique_experts_used": 5,
+            "experts_on_gpu": 5,
+            "experts_on_cpu": 0,
+            "tokens_processed": 4,
+            "experts_per_token": 2.0,
+            "unique_experts_per_batch": 5,
+            "experts_used": [
+              0,
+              1,
+              4,
+              5,
+              6
+            ],
+            "gpu_experts": [
+              0,
+              1,
+              4,
+              5,
+              6
+            ],
+            "cpu_experts": []
+          },
+          "6": {
+            "unique_experts_used": 5,
+            "experts_on_gpu": 5,
+            "experts_on_cpu": 0,
+            "tokens_processed": 4,
+            "experts_per_token": 2.0,
+            "unique_experts_per_batch": 5,
+            "experts_used": [
+              0,
+              1,
+              3,
+              5,
+              6
+            ],
+            "gpu_experts": [
+              0,
+              1,
+              3,
+              5,
+              6
+            ],
+            "cpu_experts": []
+          },
+          "7": {
+            "unique_experts_used": 5,
+            "experts_on_gpu": 5,
+            "experts_on_cpu": 0,
+            "tokens_processed": 4,
+            "experts_per_token": 2.0,
+            "unique_experts_per_batch": 5,
+            "experts_used": [
+              1,
+              2,
+              3,
+              4,
+              6
+            ],
+            "gpu_experts": [
+              1,
+              2,
+              3,
+              4,
+              6
+            ],
+            "cpu_experts": []
+          },
+          "8": {
+            "unique_experts_used": 4,
+            "experts_on_gpu": 4,
+            "experts_on_cpu": 0,
+            "tokens_processed": 4,
+            "experts_per_token": 2.0,
+            "unique_experts_per_batch": 4,
+            "experts_used": [
+              1,
+              3,
+              5,
+              6
+            ],
+            "gpu_experts": [
+              1,
+              3,
+              5,
+              6
+            ],
+            "cpu_experts": []
+          },
+          "9": {
+            "unique_experts_used": 3,
+            "experts_on_gpu": 3,
+            "experts_on_cpu": 0,
+            "tokens_processed": 4,
+            "experts_per_token": 2.0,
+            "unique_experts_per_batch": 3,
+            "experts_used": [
+              2,
+              5,
+              7
+            ],
+            "gpu_experts": [
+              2,
+              5,
+              7
+            ],
+            "cpu_experts": []
+          },
+          "10": {
+            "unique_experts_used": 4,
+            "experts_on_gpu": 4,
+            "experts_on_cpu": 0,
+            "tokens_processed": 4,
+            "experts_per_token": 2.0,
+            "unique_experts_per_batch": 4,
+            "experts_used": [
+              0,
+              1,
+              2,
+              4
+            ],
+            "gpu_experts": [
+              0,
+              1,
+              2,
+              4
+            ],
+            "cpu_experts": []
+          },
+          "11": {
+            "unique_experts_used": 5,
+            "experts_on_gpu": 5,
+            "experts_on_cpu": 0,
+            "tokens_processed": 4,
+            "experts_per_token": 2.0,
+            "unique_experts_per_batch": 5,
+            "experts_used": [
+              0,
+              1,
+              2,
+              4,
+              5
+            ],
+            "gpu_experts": [
+              0,
+              1,
+              2,
+              4,
+              5
+            ],
+            "cpu_experts": []
+          },
+          "12": {
+            "unique_experts_used": 4,
+            "experts_on_gpu": 4,
+            "experts_on_cpu": 0,
+            "tokens_processed": 4,
+            "experts_per_token": 2.0,
+            "unique_experts_per_batch": 4,
+            "experts_used": [
+              0,
+              1,
+              3,
+              6
+            ],
+            "gpu_experts": [
+              0,
+              1,
+              3,
+              6
+            ],
+            "cpu_experts": []
+          },
+          "13": {
+            "unique_experts_used": 4,
+            "experts_on_gpu": 4,
+            "experts_on_cpu": 0,
+            "tokens_processed": 4,
+            "experts_per_token": 2.0,
+            "unique_experts_per_batch": 4,
+            "experts_used": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "gpu_experts": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "cpu_experts": []
+          },
+          "14": {
+            "unique_experts_used": 5,
+            "experts_on_gpu": 5,
+            "experts_on_cpu": 0,
+            "tokens_processed": 4,
+            "experts_per_token": 2.0,
+            "unique_experts_per_batch": 5,
+            "experts_used": [
+              0,
+              1,
+              2,
+              5,
+              6
+            ],
+            "gpu_experts": [
+              0,
+              1,
+              2,
+              5,
+              6
+            ],
+            "cpu_experts": []
+          },
+          "15": {
+            "unique_experts_used": 4,
+            "experts_on_gpu": 4,
+            "experts_on_cpu": 0,
+            "tokens_processed": 4,
+            "experts_per_token": 2.0,
+            "unique_experts_per_batch": 4,
+            "experts_used": [
+              1,
+              2,
+              5,
+              7
+            ],
+            "gpu_experts": [
+              1,
+              2,
+              5,
+              7
+            ],
+            "cpu_experts": []
+          },
+          "16": {
+            "unique_experts_used": 4,
+            "experts_on_gpu": 4,
+            "experts_on_cpu": 0,
+            "tokens_processed": 4,
+            "experts_per_token": 2.0,
+            "unique_experts_per_batch": 4,
+            "experts_used": [
+              2,
+              4,
+              5,
+              7
+            ],
+            "gpu_experts": [
+              2,
+              4,
+              5,
+              7
+            ],
+            "cpu_experts": []
+          },
+          "17": {
+            "unique_experts_used": 4,
+            "experts_on_gpu": 4,
+            "experts_on_cpu": 0,
+            "tokens_processed": 4,
+            "experts_per_token": 2.0,
+            "unique_experts_per_batch": 4,
+            "experts_used": [
+              0,
+              5,
+              6,
+              7
+            ],
+            "gpu_experts": [
+              0,
+              5,
+              6,
+              7
+            ],
+            "cpu_experts": []
+          },
+          "18": {
+            "unique_experts_used": 4,
+            "experts_on_gpu": 4,
+            "experts_on_cpu": 0,
+            "tokens_processed": 4,
+            "experts_per_token": 2.0,
+            "unique_experts_per_batch": 4,
+            "experts_used": [
+              1,
+              5,
+              6,
+              7
+            ],
+            "gpu_experts": [
+              1,
+              5,
+              6,
+              7
+            ],
+            "cpu_experts": []
+          },
+          "19": {
+            "unique_experts_used": 4,
+            "experts_on_gpu": 4,
+            "experts_on_cpu": 0,
+            "tokens_processed": 4,
+            "experts_per_token": 2.0,
+            "unique_experts_per_batch": 4,
+            "experts_used": [
+              0,
+              2,
+              3,
+              6
+            ],
+            "gpu_experts": [
+              0,
+              2,
+              3,
+              6
+            ],
+            "cpu_experts": []
+          },
+          "20": {
+            "unique_experts_used": 6,
+            "experts_on_gpu": 6,
+            "experts_on_cpu": 0,
+            "tokens_processed": 4,
+            "experts_per_token": 2.0,
+            "unique_experts_per_batch": 6,
+            "experts_used": [
+              0,
+              2,
+              3,
+              4,
+              6,
+              7
+            ],
+            "gpu_experts": [
+              0,
+              2,
+              3,
+              4,
+              6,
+              7
+            ],
+            "cpu_experts": []
+          },
+          "21": {
+            "unique_experts_used": 4,
+            "experts_on_gpu": 4,
+            "experts_on_cpu": 0,
+            "tokens_processed": 4,
+            "experts_per_token": 2.0,
+            "unique_experts_per_batch": 4,
+            "experts_used": [
+              0,
+              3,
+              4,
+              7
+            ],
+            "gpu_experts": [
+              0,
+              3,
+              4,
+              7
+            ],
+            "cpu_experts": []
+          },
+          "22": {
+            "unique_experts_used": 4,
+            "experts_on_gpu": 4,
+            "experts_on_cpu": 0,
+            "tokens_processed": 4,
+            "experts_per_token": 2.0,
+            "unique_experts_per_batch": 4,
+            "experts_used": [
+              0,
+              1,
+              2,
+              4
+            ],
+            "gpu_experts": [
+              0,
+              1,
+              2,
+              4
+            ],
+            "cpu_experts": []
+          },
+          "23": {
+            "unique_experts_used": 5,
+            "experts_on_gpu": 5,
+            "experts_on_cpu": 0,
+            "tokens_processed": 4,
+            "experts_per_token": 2.0,
+            "unique_experts_per_batch": 5,
+            "experts_used": [
+              0,
+              2,
+              3,
+              6,
+              7
+            ],
+            "gpu_experts": [
+              0,
+              2,
+              3,
+              6,
+              7
+            ],
+            "cpu_experts": []
+          },
+          "24": {
+            "unique_experts_used": 6,
+            "experts_on_gpu": 6,
+            "experts_on_cpu": 0,
+            "tokens_processed": 4,
+            "experts_per_token": 2.0,
+            "unique_experts_per_batch": 6,
+            "experts_used": [
+              1,
+              2,
+              3,
+              5,
+              6,
+              7
+            ],
+            "gpu_experts": [
+              1,
+              2,
+              3,
+              5,
+              6,
+              7
+            ],
+            "cpu_experts": []
+          },
+          "25": {
+            "unique_experts_used": 4,
+            "experts_on_gpu": 4,
+            "experts_on_cpu": 0,
+            "tokens_processed": 4,
+            "experts_per_token": 2.0,
+            "unique_experts_per_batch": 4,
+            "experts_used": [
+              0,
+              2,
+              3,
+              6
+            ],
+            "gpu_experts": [
+              0,
+              2,
+              3,
+              6
+            ],
+            "cpu_experts": []
+          },
+          "26": {
+            "unique_experts_used": 5,
+            "experts_on_gpu": 5,
+            "experts_on_cpu": 0,
+            "tokens_processed": 4,
+            "experts_per_token": 2.0,
+            "unique_experts_per_batch": 5,
+            "experts_used": [
+              0,
+              2,
+              3,
+              5,
+              6
+            ],
+            "gpu_experts": [
+              0,
+              2,
+              3,
+              5,
+              6
+            ],
+            "cpu_experts": []
+          },
+          "27": {
+            "unique_experts_used": 4,
+            "experts_on_gpu": 4,
+            "experts_on_cpu": 0,
+            "tokens_processed": 4,
+            "experts_per_token": 2.0,
+            "unique_experts_per_batch": 4,
+            "experts_used": [
+              1,
+              2,
+              4,
+              6
+            ],
+            "gpu_experts": [
+              1,
+              2,
+              4,
+              6
+            ],
+            "cpu_experts": []
+          },
+          "28": {
+            "unique_experts_used": 4,
+            "experts_on_gpu": 4,
+            "experts_on_cpu": 0,
+            "tokens_processed": 4,
+            "experts_per_token": 2.0,
+            "unique_experts_per_batch": 4,
+            "experts_used": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "gpu_experts": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "cpu_experts": []
+          },
+          "29": {
+            "unique_experts_used": 3,
+            "experts_on_gpu": 3,
+            "experts_on_cpu": 0,
+            "tokens_processed": 4,
+            "experts_per_token": 2.0,
+            "unique_experts_per_batch": 3,
+            "experts_used": [
+              2,
+              5,
+              7
+            ],
+            "gpu_experts": [
+              2,
+              5,
+              7
+            ],
+            "cpu_experts": []
+          },
+          "30": {
+            "unique_experts_used": 3,
+            "experts_on_gpu": 3,
+            "experts_on_cpu": 0,
+            "tokens_processed": 4,
+            "experts_per_token": 2.0,
+            "unique_experts_per_batch": 3,
+            "experts_used": [
+              3,
+              6,
+              7
+            ],
+            "gpu_experts": [
+              3,
+              6,
+              7
+            ],
+            "cpu_experts": []
+          },
+          "31": {
+            "unique_experts_used": 4,
+            "experts_on_gpu": 4,
+            "experts_on_cpu": 0,
+            "tokens_processed": 4,
+            "experts_per_token": 2.0,
+            "unique_experts_per_batch": 4,
+            "experts_used": [
+              1,
+              2,
+              4,
+              7
+            ],
+            "gpu_experts": [
+              1,
+              2,
+              4,
+              7
+            ],
+            "cpu_experts": []
+          }
+        },
+        "decode_step": true,
+        "tokens_per_batch": 4,
+        "unique_experts_per_batch": {},
+        "avg_experts_per_layer": 4.4375,
+        "avg_gpu_experts_per_layer": 4.4375,
+        "avg_cpu_experts_per_layer": 0.0,
+        "avg_experts_per_token": 2.0,
+        "avg_unique_experts_per_batch": 4.4375
+      }
+    }
+  ],
+  "summary": {
+    "avg_prefill_time": 6.362382888793945,
+    "avg_decode_time": 34.167988777160645,
+    "avg_total_time": 40.53037166595459,
+    "avg_hit_rate": 1.0,
+    "avg_throughput": 3.7461965009061555,
+    "avg_gpu_expert_percentage": 0.84765625,
+    "tokens_per_second": 14.984786003624622,
+    "avg_unique_experts_per_batch": 4.4375
+  }
+}

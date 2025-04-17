@@ -1,0 +1,2 @@
+avg_prefill_time,avg_decode_time,avg_total_time,avg_hit_rate,avg_throughput,avg_gpu_expert_percentage,tokens_per_second,avg_unique_experts_per_batch,policy,batch_size,avg_experts_per_layer,avg_gpu_experts_per_layer,avg_cpu_experts_per_layer
+7.409368276596069,58.45936107635498,65.86872935295105,0.8682450606416275,2.1895552336402813,0.84765625,8.758220934561125,3.25,advanced_parametrized,4,3.25,2.96875,0.28125
