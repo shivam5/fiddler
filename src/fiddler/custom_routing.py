@@ -48,13 +48,30 @@ def custom_routing_function(hidden_states: torch.Tensor,
                 if model.is_expert_in_gpu(i_layer, i_expert):
                     mask[i_expert] = 1.0
             
-            # Apply mask to router logits
-            masked_logits = masked_logits * mask.unsqueeze(0)
+            # Set logits of non-GPU experts to a large negative value to guarantee they aren't chosen
+            # This is more robust than multiplication which might allow small non-zero values
+            large_negative = -1e10
+            masked_logits = torch.where(mask.unsqueeze(0) > 0, masked_logits, torch.tensor(large_negative, device=masked_logits.device))
             
             # Compute new routing weights with masked logits
             topk_weights, topk_ids = fused_topk(
                 hidden_states, masked_logits, topk, renormalize=renormalize
             )
+            
+            # Verify all selected experts are on GPU
+            gpu_experts = []
+            for i_expert in range(num_total_experts):
+                if model.is_expert_in_gpu(i_layer, i_expert):
+                    gpu_experts.append(i_expert)
+            
+            # Double-check that topk_ids only contains GPU experts
+            # This handles any edge cases in numerical precision
+            if len(gpu_experts) >= topk:
+                for i in range(topk_ids.shape[0]):
+                    for j in range(topk_ids.shape[1]):
+                        if topk_ids[i, j].item() not in gpu_experts:
+                            # Replace with the first GPU expert
+                            topk_ids[i, j] = torch.tensor(gpu_experts[0], device=topk_ids.device, dtype=topk_ids.dtype)
             
             # Count how many GPU experts we're keeping
             gpu_experts_count = 0
@@ -217,25 +234,93 @@ def optimize_expert_selection(topk_ids, topk_weights, gating_output, num_experts
     
     return num_experts_to_keep, len(selected_experts)
 
-def optimize_expert_selection_parameterized(topk_ids, topk_weights, gating_output, num_experts, min_experts, topk, beta, alpha):
-    # Similar to optimize_expert_selection but with beta and alpha parameters
-    expert_votes = torch.zeros(num_experts, device=gating_output.device)
-    for i in range(topk_ids.shape[1]):
-        # Ensure consistent dtype for scatter_add_
-        weights = topk_weights[:, i].to(expert_votes.dtype)
-        expert_votes.scatter_add_(0, topk_ids[:, i], weights)
+def extract_important_graded(topk_weights, epsilon=1e-8):
+    """
+    Returns a continuous confidence/importance score for every token.
+    Compares top-half vs bottom-half weights.
     
-    # Use beta to scale the threshold
-    threshold = beta * torch.mean(expert_votes)
+    Args:
+        topk_weights (Tensor): (batch_size, topk)
+        epsilon (float): Numerical stabilizer
+        
+    Returns:
+        Tensor: (batch_size,) confidence scores in [-1, 1]
+    """
+    mid = topk_weights.shape[1] // 2
+    top_half_sum = topk_weights[:, :mid].sum(dim=1)        # (B,)
+    bottom_half_sum = topk_weights[:, mid:].sum(dim=1)     # (B,)
+    confidence = (top_half_sum - bottom_half_sum) / (top_half_sum + epsilon)
     
-    # Use alpha to adjust the selection
-    selected_experts = (expert_votes > threshold).nonzero().squeeze()
-    num_experts_to_keep = max(min_experts, len(selected_experts))
+    return confidence
+
+def optimize_expert_selection_parameterized(topk_ids, topk_weights, gating_output, num_experts, min_experts, topk, beta=0.5, alpha=1.0):
+    """
+    Parameterized expert selection based on token confidence.
+    Formula: keep_counts = floor(confidence * K * beta) + alpha
     
-    if len(selected_experts) > num_experts_to_keep:
-        selected_experts = selected_experts[torch.argsort(expert_votes[selected_experts], descending=True)[:num_experts_to_keep]]
+    Args:
+        topk_ids: Selected expert IDs (batch_size, topk)
+        topk_weights: Weights for selected experts (batch_size, topk)
+        gating_output: Full gating output
+        num_experts: Total number of experts
+        min_experts: Minimum experts to keep
+        topk: Top-k value used for expert selection
+        beta: Scaling factor (default 0.5)
+        alpha: Base value (default 1.0)
+        
+    Returns:
+        Tuple of (num_experts_to_keep, num_unique_experts)
+    """
+    # Calculate initial number of unique experts
+    num_unique_experts = len(torch.unique(topk_ids))
+    device = topk_ids.device
     
-    return num_experts_to_keep, len(selected_experts)
+    # Calculate confidence scores for each token
+    confidence = extract_important_graded(topk_weights)  # (batch_size,)
+    
+    # Calculate how many experts to keep per token
+    # Formula: keep_counts = floor(confidence * K * beta) + alpha
+    keep_counts = (confidence * topk * beta).floor().to(torch.int64) + alpha
+    keep_counts = keep_counts.clamp(min=1, max=topk)  # Ensure at least 1 expert and at most topk
+    
+    # Create mask for positions to keep
+    batch_size = topk_ids.shape[0]
+    positions = torch.arange(topk, device=device).expand(batch_size, topk)  # (batch_size, topk)
+    keep_mask = positions < keep_counts.unsqueeze(-1)  # (batch_size, topk)
+    
+    # Determine which experts to keep
+    kept_ids = torch.where(keep_mask, topk_ids, torch.tensor(-1, device=device))  # Use -1 for masked positions
+    flat_ids = kept_ids.reshape(-1)  # Flatten to (batch_size * topk)
+    
+    # Shift IDs by +1 so -1 maps to 0 (dummy bucket)
+    shifted_ids = flat_ids + 1
+    
+    # Count occurrences of each expert
+    counts = torch.zeros(num_experts + 1, dtype=torch.int32, device=device)
+    ones = torch.ones_like(shifted_ids, dtype=counts.dtype)
+    counts.scatter_add_(0, shifted_ids.to(torch.int64), ones)
+    
+    # Experts to keep are those with count > 0 (excluding dummy bucket)
+    experts_to_keep_mask = counts[1:] > 0  # (num_experts,)
+    num_experts_to_keep = experts_to_keep_mask.sum().item()
+    
+    # Ensure minimum number of experts
+    if num_experts_to_keep < min_experts:
+        # If we have fewer experts than minimum, keep the experts with highest counts
+        expert_counts = counts[1:]  # Remove dummy bucket
+        _, top_experts = torch.topk(expert_counts, min_experts)
+        new_mask = torch.zeros_like(experts_to_keep_mask)
+        new_mask.scatter_(0, top_experts, 1)
+        experts_to_keep_mask = new_mask
+        num_experts_to_keep = min_experts
+    
+    # Apply mask to gating output
+    for i in range(num_experts):
+        if not experts_to_keep_mask[i]:
+            # Zero out logits for experts not to keep
+            gating_output[:, i] = torch.tensor(float('-inf'), device=device)
+    
+    return num_experts_to_keep, num_unique_experts
 
 def rot_pref(gating_output, rank1, rank2):
     # Rotate preferences between two ranks

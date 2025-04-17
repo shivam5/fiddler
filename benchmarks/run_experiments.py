@@ -13,11 +13,15 @@ from pathlib import Path
 import pandas as pd
 from datetime import datetime
 
+# current direcotory + runs + run_2
+run_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "runs", "run_2")
+
+
 def run_experiment(batch_size, routing_policy, input_token=512, output_token=128, num_samples=3):
     """Run a single experiment with the given parameters"""
     
     # Create results directory if it doesn't exist
-    results_dir = "results"
+    results_dir = os.path.join(run_dir, "results")
     os.makedirs(results_dir, exist_ok=True)
     
     # Construct output filename
@@ -32,8 +36,7 @@ def run_experiment(batch_size, routing_policy, input_token=512, output_token=128
         "--input_token", str(input_token),
         "--output_token", str(output_token),
         "--num_samples", str(num_samples),
-        "--output", output_file,
-        "--skip_versioning"  # Skip automatic versioning after each run
+        "--output", output_file
     ]
     
     print(f"Running experiment: batch_size={batch_size}, policy={routing_policy}")
@@ -45,7 +48,7 @@ def run_experiment(batch_size, routing_policy, input_token=512, output_token=128
     # Return the output file
     return output_file
 
-def generate_plots(result_files, output_dir="plots"):
+def generate_plots(result_files, output_dir=os.path.join(run_dir, "plots")):
     """Generate plots from the experiment results"""
     
     # Create plots directory if it doesn't exist
@@ -195,10 +198,11 @@ def generate_plots(result_files, output_dir="plots"):
 def main():
     parser = argparse.ArgumentParser(description="Run experiments for different MoE routing policies")
     # parser.add_argument("--batch_sizes", type=int, nargs="+", default=[1, 2, 4, 8], 
-    parser.add_argument("--batch_sizes", type=int, nargs="+", default=[16, 32], 
+    parser.add_argument("--batch_sizes", type=int, nargs="+", default=[4], 
                         help="Batch sizes to test")
     parser.add_argument("--policies", type=str, nargs="+", 
-                        default=["do-nothing", "gpu_only", "simple", "advanced", "rotate"],
+                        default=["do-nothing", "advanced_parametrized", "gpu_only"],
+                        # default=["do-nothing", "advanced", "advanced_parametrized", "gpu_only"],
                         # default=["do-nothing", "simple", "advanced", "rotate"],
                         help="Routing policies to test")
     parser.add_argument("--input_token", type=int, default=512, 
@@ -226,15 +230,6 @@ def main():
     
     # Generate plots from results
     generate_plots(result_files)
-    
-    # Version all results at once after all experiments are complete
-    print("\nVersioning all results together...")
-    version_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "version_results.sh")
-    if os.path.exists(version_script) and os.access(version_script, os.X_OK):
-        subprocess.run([version_script], check=True)
-        print("Results versioned successfully.")
-    else:
-        print("Skipping versioning (version_results.sh not found or not executable)")
 
 if __name__ == "__main__":
     main() 
