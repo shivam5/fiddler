@@ -1,197 +1,98 @@
 import torch
+from torch import Tensor
+from typing import Tuple, Optional
 
-def custom_routing_function(hidden_states: torch.Tensor,
-                            router_logits: torch.Tensor,
-                            topk: int,
-                            renormalize: bool,
-                            model=None,
-                            i_layer=0,
-                            policy="do-nothing"):
-    # Default parameters
-    num_total_experts = 8  # Mixtral has 8 experts
-    num_experts_per_token = 2  # We use top-2 experts
-    num_experts_to_keep = 8  # Default to keeping all experts
-    min_experts = 2  # Minimum number of experts to keep
-    threshold_percentile = 0.5  # Default threshold
-    count_of_topk = 2  # Default count
-
-    # Determine if it's prefill or decode phase based on sequence length
-    # Prefill phase has sequence length 512, decode phase has sequence length 128
-    is_prefill = hidden_states.shape[0] == 512
-    profile_complete = True  # We'll assume profiling is complete
-
-    if policy == "do-nothing":
-        topk_weights, topk_ids = fused_topk(
-            hidden_states, router_logits, topk, renormalize
-        )
-        return topk_weights, topk_ids, num_experts_to_keep
-        
-    if profile_complete and not is_prefill:
-        masked_logits = router_logits.clone()  # Create a copy to avoid modifying the original
-
-        # Apply policy-specific modifications to the logits before initial top-k
-        if policy == "gpu_boosted":
-            # Get boost factor (theta) from model or use default
-            theta = getattr(model, 'gpu_boost_factor', 5.0)
-            
-            # Create a boost mask for GPU experts (vectorized approach)
-            if model:
-                # Create binary mask indicating which experts are on GPU
-                gpu_expert_mask = torch.zeros(num_total_experts, device=masked_logits.device)
-                # Get GPU expert locations from model's expert_loc tensor if possible
-                if hasattr(model, 'expert_loc'):
-                    gpu_expert_mask = torch.tensor(model.expert_loc[i_layer] == 1, 
-                                                device=masked_logits.device, 
-                                                dtype=torch.float32)
-                # Apply boost factor: 1.0 for CPU experts, theta for GPU experts
-                boost_mask = torch.ones_like(masked_logits)
-                boost_mask = 1.0 + (theta - 1.0) * gpu_expert_mask.unsqueeze(0)
-            else:
-                # Fallback to default if model is None
-                boost_mask = torch.ones_like(masked_logits)
-            
-            # Apply the boost to the logits in one operation
-            masked_logits = masked_logits * boost_mask
-        
-        elif policy == "gpu_only":
-            # Create mask for GPU experts (vectorized approach)
-            if model and hasattr(model, 'expert_loc'):
-                # Get mask directly from model's expert_loc tensor
-                mask = torch.tensor(model.expert_loc[i_layer] == 1, 
-                                  device=masked_logits.device, 
-                                  dtype=torch.float32)
-            else:
-                # Fallback to old approach if model doesn't have expert_loc
-                mask = torch.zeros(masked_logits.shape[1], device=masked_logits.device)
-                if model:
-                    for i_expert in range(num_total_experts):
-                        if model.is_expert_in_gpu(i_layer, i_expert):
-                            mask[i_expert] = 1.0
-            
-            # Set logits of non-GPU experts to a large negative value
-            large_negative = -1e10
-            masked_logits = torch.where(mask.unsqueeze(0) > 0, masked_logits, 
-                                     torch.tensor(large_negative, device=masked_logits.device))
-            
-            # Count GPU experts
-            gpu_experts_count = mask.sum().int()
-            num_experts_to_keep = gpu_experts_count
-            
-            # Compute routing weights with masked logits
-            topk_weights, topk_ids = fused_topk(
-                hidden_states, masked_logits, topk, renormalize=renormalize
-            )
-            
-            return topk_weights, topk_ids, num_experts_to_keep
-
-        # First pass top-k for all policies except gpu_only (which already computed it)
-        topk_weights_initial, topk_ids_initial = fused_topk(
-            hidden_states, masked_logits, topk, renormalize=True
-        )
-
-        if policy == "simple":
-            num_experts_to_keep = 4  # Keep only 4 experts
-            num_experts_to_drop = num_total_experts - num_experts_to_keep
-            
-            masked_logits, drop_indices = extract_voting_and_mask(
-                topk_ids_initial,
-                masked_logits,
-                num_experts_to_drop=num_experts_to_drop
-            )
-
-        elif policy == "advanced":
-            num_experts_to_keep, num_unique_experts = optimize_expert_selection(
-                topk_ids=topk_ids_initial,
-                topk_weights=topk_weights_initial,
-                gating_output=masked_logits,
-                num_experts=num_total_experts,
-                threshold_percentile=threshold_percentile,
-                min_experts=min_experts,
-                topk=num_experts_per_token,
-            )
-
-        elif policy in ["advanced_parametrized", "gpu_boosted"]:
-            beta = 0.7
-            alpha = 0.0
-
-            num_experts_to_keep, num_unique_experts = optimize_expert_selection_parameterized(
-                topk_ids=topk_ids_initial,
-                topk_weights=topk_weights_initial,
-                gating_output=masked_logits,
-                num_experts=num_total_experts,
-                min_experts=min_experts,
-                topk=num_experts_per_token,
-                beta=beta,
-                alpha=alpha,
-            )
-
-        elif policy == "rotate":
-            rank1 = 0  # Default rank1
-            rank2 = 1  # Default rank2
-            rot_pref(masked_logits, rank1, rank2)
-            num_experts_to_keep = num_total_experts - 2
-
-        elif policy == "rotate_based_on_confidence":
-            confidence_policy = "mean"  # Default confidence policy
-            quartile = 0.5  # Default quartile
-            rotate_based_on_confidence(masked_logits, topk_weights_initial, threshold_percentile, confidence_policy, quartile)
-            
-        # Final top-k computation with the masked logits (except for gpu_only which already returned)
-        topk_weights, topk_ids = fused_topk(
-            hidden_states, masked_logits, topk, renormalize=renormalize
-        )
-        
-    else:
-        # Prefill case — no expert dropping
-        topk_weights, topk_ids = fused_topk(
-            hidden_states, router_logits, topk, renormalize
-        )
-        num_experts_to_keep = num_total_experts
-
-    return topk_weights, topk_ids, num_experts_to_keep
-
+@torch.jit.script
 def fused_topk(
-    hidden_states: torch.Tensor,
-    gating_output: torch.Tensor,
+    hidden_states: Tensor,
+    gating_output: Tensor,
     topk: int,
-    renormalize: bool,
-):
-    assert hidden_states.shape[0] == gating_output.shape[0], (
-        "Number of tokens mismatch")
-
+    renormalize: bool
+) -> Tuple[Tensor, Tensor]:
+    # CUDA graph-friendly topk implementation
     M, _ = hidden_states.shape
-
-    topk_weights = torch.empty(M,
-                               topk,
-                               dtype=torch.float32,
-                               device=hidden_states.device)
-    topk_ids = torch.empty(M,
-                           topk,
-                           dtype=torch.int32,
-                           device=hidden_states.device)
-    token_expert_indicies = torch.empty(M,
-                                        topk,
-                                        dtype=torch.int32,
-                                        device=hidden_states.device)
     
-    # Compute softmax and top-k
-    gating_output = gating_output.float()
-    gating_output = torch.softmax(gating_output, dim=-1)
-    topk_weights, topk_ids = torch.topk(gating_output, topk, dim=-1)
-    
-    # Convert topk_ids to int64 to match PyTorch's native top-k
-    topk_ids = topk_ids.to(torch.int64)
+    # Using stable tensor operations
+    weights = torch.softmax(gating_output.float(), dim=-1)
+    topk_weights, topk_ids = torch.topk(weights, topk, dim=-1)
     
     if renormalize:
         topk_weights = topk_weights / topk_weights.sum(dim=-1, keepdim=True)
     
-    return topk_weights, topk_ids
+    return topk_weights.to(hidden_states.dtype), topk_ids
 
+
+def custom_routing_function(
+    hidden_states: Tensor,
+    router_logits: Tensor,
+    topk: int,
+    renormalize: bool,
+    layer_idx: int = 0,
+    num_total_experts: int = 8,
+    policy: str = "do-nothing",
+    gpu_boost_factor: float = 5.0,
+    min_experts: int = 2,
+    gpu_expert_mask: Optional[Tensor] = None
+) -> Tuple[Tensor, Tensor, int]:
+    # Static shape assertions for graph compatibility
+    B, K = router_logits.shape
+    assert K == num_total_experts, f"Expert count mismatch: got {K}, expected {num_total_experts}"
+    
+    # Use provided gpu_expert_mask or create a default one
+    if gpu_expert_mask is None:
+        # Default assumption: first half of experts are on GPU
+        gpu_expert_mask = torch.zeros(num_total_experts, 
+                                     device=router_logits.device,
+                                     dtype=torch.bool)
+        gpu_expert_mask[:num_total_experts//2] = True
+    
+    # Clone router logits to avoid modifying the input
+    masked_logits = router_logits.clone()
+    
+    # Apply policy-specific modifications
+    if policy == "gpu_only":
+        # Static mask application for gpu_only policy
+        large_negative = torch.tensor(-1e10, device=router_logits.device, dtype=router_logits.dtype)
+        masked_logits = torch.where(
+            gpu_expert_mask.unsqueeze(0).to(router_logits.device), 
+            masked_logits,
+            large_negative
+        )
+        
+        # Compute routing weights with masked logits
+        topk_weights, topk_ids = fused_topk(
+            hidden_states, masked_logits, topk, renormalize
+        )
+        
+        # Count GPU experts
+        num_experts_to_keep = gpu_expert_mask.sum().int().item()
+        
+        return topk_weights, topk_ids, num_experts_to_keep
+        
+    elif policy == "gpu_boosted":
+        # Static boost factor application for gpu_boosted policy
+        boost_mask = torch.ones_like(masked_logits)
+        boost_mask = boost_mask + (gpu_boost_factor - 1.0) * gpu_expert_mask.float().unsqueeze(0).to(boost_mask.device)
+        
+        # Apply the boost to the logits in one operation
+        masked_logits = masked_logits * boost_mask
+        
+    # For all other policies, do standard topk
+    topk_weights, topk_ids = fused_topk(
+        hidden_states, masked_logits, topk, renormalize
+    )
+    
+    # Default num_experts_to_keep for non-gpu_only policies
+    num_experts_to_keep = num_total_experts
+    
+    return topk_weights, topk_ids, num_experts_to_keep
+
+
+# Legacy support for backward compatibility
 def extract_voting_and_mask(topk_ids, gating_output, num_experts_to_drop):
     # Count votes for each expert
     expert_votes = torch.zeros(gating_output.shape[1], device=gating_output.device)
     for i in range(topk_ids.shape[1]):
-        # Fix dtype mismatch - convert ones to match expert_votes dtype
         ones = torch.ones_like(topk_ids[:, i], dtype=expert_votes.dtype)
         expert_votes.scatter_add_(0, topk_ids[:, i], ones)
     

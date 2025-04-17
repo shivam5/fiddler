@@ -14,7 +14,7 @@ import pandas as pd
 from datetime import datetime
 
 # current direcotory + runs + run_2
-run_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "runs", "run_10")
+run_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "runs", "run_11_cuda_graphs")
 
 
 def run_experiment(batch_size, routing_policy, input_token=512, output_token=128, num_samples=3, gpu_boost_factor=None, use_cuda_graph=False):

@@ -99,6 +99,7 @@ if __name__ == "__main__":
     random.shuffle(texts)
     
     model = FiddlerMixtral(args)
+    model.enable_cuda_graphs(True)
     
     # Metrics to collect
     metrics = {

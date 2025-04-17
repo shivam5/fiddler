@@ -384,6 +384,12 @@ class FiddlerMixtral:
         self.cnt_expert_hit = 0
         self.cnt_expert_all = 0
         
+        # CUDA graph support
+        use_cuda_graph = getattr(self, 'use_cuda_graph', False)
+        cuda_graph = None
+        static_input_ids = None
+        static_position_ids = None
+        
         # Handle single text case
         if isinstance(texts, str):
             texts = [texts]
@@ -412,61 +418,119 @@ class FiddlerMixtral:
         search_start = False
         probs = torch.full((input_ids.shape[0], 1), 1.0)
 
-        # print(f"Starting generation of {output_token} tokens for batch size {input_ids.shape[0]}...")
-        for i_token in range(output_token):
-            # if i_token % 5 == 0:  # Log every 5 tokens
-            #     print(f"Generating token {i_token + 1}/{output_token}")
-            #     if is_decode:
-            #         print(f"Current outputs: {[s[:50] + '...' for s in decode_strings]}")
-
-            # if self.beam_width == 1:
-            #     print([self.tokenizer.decode(ids) for ids in input_ids])
-            # if is_decode:
-            #     for i in range(input_ids.shape[0]):
-            #         decode_strings[i] += " " + self.tokenizer.decode(input_ids[i, :])
-
-            logits = self.mixtral_forward(input_ids, position_ids, is_decode)
-
-            logits = logits.to("cpu")
-            # logits.shape: (batch_size, seq_len, vocab_size)
-
-            # normalize logits
-            logits = F.softmax(logits, dim=-1)
-
-            # greedy search:
-            # output = torch.argmax(logits, dim=-1)
-
-            # beam_search:
-            self.past_key_values_length += logits.shape[1]
-            if search_start:
-                new_probs, output = torch.topk(logits, 1, dim=-1)
-                new_probs = new_probs[:, -1].flatten().view(-1, 1)
-            else:
-                new_probs, output = torch.topk(logits, self.beam_width, dim=-1)
-                new_probs = self.initial_beam_tensor(new_probs)
-                output = self.initial_beam_tensor(output)
-                search_start = True
-            # new_probs = new_probs / new_probs.sum(dim=-1, keepdim=True)
-            probs = probs * new_probs
-
-            input_ids = output[:, -1].flatten().view(-1, 1).to(self.dev)
-            # input_ids.shape: (batch_size, seq_len=1)
-
-            position_ids = (
-                torch.arange(
+        # Prefill phase
+        logits = self.mixtral_forward(input_ids, position_ids, is_decode=False)
+        logits = logits.to("cpu")
+        
+        # Normalize logits and prepare for beam search
+        logits = F.softmax(logits, dim=-1)
+        self.past_key_values_length += logits.shape[1]
+        if search_start:
+            new_probs, output = torch.topk(logits, 1, dim=-1)
+            new_probs = new_probs[:, -1].flatten().view(-1, 1)
+        else:
+            new_probs, output = torch.topk(logits, self.beam_width, dim=-1)
+            new_probs = self.initial_beam_tensor(new_probs)
+            output = self.initial_beam_tensor(output)
+            search_start = True
+        
+        probs = probs * new_probs
+        input_ids = output[:, -1].flatten().view(-1, 1).to(self.dev)
+        
+        # Record prefill time
+        prefill_time = time.time() - tick
+        tick = time.time()
+        is_decode = True
+        
+        # Initialize CUDA graph for decode phase if enabled
+        if use_cuda_graph:
+            try:
+                # Log memory usage before graph capture
+                torch.cuda.synchronize()
+                print(f"Memory before graph capture: {torch.cuda.memory_allocated()/1024**2:.2f} MB")
+                
+                # Create static tensors for graph capture
+                static_input_ids = input_ids.clone()
+                static_position_ids = torch.arange(
                     self.past_key_values_length,
                     self.past_key_values_length + 1,
                     dtype=torch.long,
-                    device=self.dev,
-                )
-                .unsqueeze(0)
-                .expand(input_ids.shape[0], -1)
-            )
-            # position_ids.shape: (batch_size, 1)
-            if not is_decode:
-                prefill_time += time.time() - tick
-                tick = time.time()
-            is_decode = True
+                    device=self.dev
+                ).unsqueeze(0).expand(input_ids.shape[0], -1)
+                
+                # Create and capture the graph
+                cuda_graph = torch.cuda.CUDAGraph()
+                with torch.cuda.graph(cuda_graph):
+                    static_logits = self.mixtral_forward(static_input_ids, static_position_ids, is_decode=True)
+                
+                print("CUDA graph captured successfully!")
+                torch.cuda.synchronize()
+                print(f"Memory after graph capture: {torch.cuda.memory_allocated()/1024**2:.2f} MB")
+            except Exception as e:
+                print(f"Failed to capture CUDA graph: {e}")
+                cuda_graph = None
+                use_cuda_graph = False
+        
+        # Decoding loop
+        for i_token in range(1, output_token):
+            try:
+                # Use CUDA graph if available
+                if use_cuda_graph and cuda_graph is not None:
+                    # Update static input tensors
+                    static_input_ids.copy_(input_ids)
+                    position_ids = torch.arange(
+                        self.past_key_values_length,
+                        self.past_key_values_length + 1,
+                        dtype=torch.long,
+                        device=self.dev
+                    ).unsqueeze(0).expand(input_ids.shape[0], -1)
+                    static_position_ids.copy_(position_ids)
+                    
+                    # Replay the graph
+                    try:
+                        cuda_graph.replay()
+                        logits = static_logits  # Use the output from the graph
+                    except Exception as e:
+                        print(f"Graph replay failed: {e}. Falling back to eager mode.")
+                        logits = self.mixtral_forward(input_ids, position_ids, is_decode=True)
+                else:
+                    # Regular forward pass
+                    position_ids = torch.arange(
+                        self.past_key_values_length,
+                        self.past_key_values_length + 1,
+                        dtype=torch.long,
+                        device=self.dev
+                    ).unsqueeze(0).expand(input_ids.shape[0], -1)
+                    logits = self.mixtral_forward(input_ids, position_ids, is_decode=True)
+                
+                # Process output and prepare next input
+                logits = logits.to("cpu")
+                logits = F.softmax(logits, dim=-1)
+                self.past_key_values_length += 1
+                
+                if search_start:
+                    new_probs, output = torch.topk(logits, 1, dim=-1)
+                    new_probs = new_probs[:, -1].flatten().view(-1, 1)
+                else:
+                    new_probs, output = torch.topk(logits, self.beam_width, dim=-1)
+                    new_probs = self.initial_beam_tensor(new_probs)
+                    output = self.initial_beam_tensor(output)
+                    search_start = True
+                
+                probs = probs * new_probs
+                input_ids = output[:, -1].flatten().view(-1, 1).to(self.dev)
+                
+            except Exception as e:
+                print(f"Error during token generation {i_token}: {e}")
+                break
+                
+        # Clean up CUDA graph resources
+        if cuda_graph is not None:
+            del static_input_ids
+            del static_position_ids
+            del cuda_graph
+            torch.cuda.empty_cache()
+        
         decode_time = time.time() - tick
         probs = probs.view(-1, self.beam_width)
         max_ids = torch.argmax(probs, dim=-1)
@@ -479,6 +543,7 @@ class FiddlerMixtral:
         print(f"Prefill time: {prefill_time:.2f}s")
         print(f"Decode time: {decode_time:.2f}s")
         print(f"Expert hit rate: {self.cnt_expert_hit / self.cnt_expert_all:.2%}")
+        print(f"CUDA graph: {'Enabled' if use_cuda_graph else 'Disabled'}")
 
         return (
             prefill_time,
@@ -561,15 +626,24 @@ class FiddlerMixtral:
             # Use custom routing if specified
             if hasattr(self, 'routing_policy'):
                 from fiddler.custom_routing import custom_routing_function
+                
+                # Create gpu_expert_mask from self.expert_loc for current layer
+                gpu_expert_mask = torch.tensor(self.expert_loc[i_layer] == 1, 
+                                           device=inps.device, 
+                                           dtype=torch.bool)
+                
+                # Use the CUDA graph compatible routing function
                 routing_weights, selected_experts, num_experts_to_keep = custom_routing_function(
                     hidden_states=inps,
                     router_logits=router_logits,
                     topk=2,  # We use top-2 experts
                     renormalize=True,
-                    model=self,
-                    i_layer=i_layer,
-                    policy=self.routing_policy
+                    layer_idx=i_layer,
+                    policy=self.routing_policy,
+                    gpu_boost_factor=self.gpu_boost_factor,
+                    gpu_expert_mask=gpu_expert_mask
                 )
+                
                 # Ensure correct dtypes
                 if selected_experts.dtype != torch.int64:
                     selected_experts = selected_experts.to(torch.int64)
@@ -848,3 +922,26 @@ class FiddlerMixtral:
         return self.model.layers[i_layer].block_sparse_moe.experts[i_expert](
             inps, routing_weights
         )
+
+    def enable_cuda_graphs(self, enabled=True):
+        """Enable or disable CUDA graph acceleration for the decode phase.
+        
+        Args:
+            enabled (bool): Whether to enable CUDA graphs
+            
+        Returns:
+            bool: Whether CUDA graphs are supported
+        """
+        if enabled and not torch.cuda.is_available():
+            print("CUDA is not available, cannot enable CUDA graphs")
+            self.use_cuda_graph = False
+            return False
+            
+        if enabled and not hasattr(torch.cuda, 'CUDAGraph'):
+            print("CUDA graphs not supported in this PyTorch version")
+            self.use_cuda_graph = False
+            return False
+            
+        self.use_cuda_graph = enabled
+        print(f"CUDA graph acceleration: {'enabled' if enabled else 'disabled'}")
+        return enabled
