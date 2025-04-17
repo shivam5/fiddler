@@ -85,7 +85,8 @@ def custom_routing_function(hidden_states: torch.Tensor,
             # Like advanced_parameterized but with a boost for GPU experts
             # Get the current layer index from the model
             i_layer = frame.f_locals.get('i_layer', 0)
-            theta = 5.0  # Boost factor for GPU experts
+            # Get theta from model or use default
+            theta = getattr(model, 'gpu_boost_factor', 5.0)  # Default to 5.0 if not specified
             
             # Boost weights for GPU experts
             for i_expert in range(num_total_experts):
@@ -100,7 +101,7 @@ def custom_routing_function(hidden_states: torch.Tensor,
             
             # Apply parameterized expert selection like in advanced_parameterized
             beta = 0.5
-            alpha = 1.0
+            alpha = 0.25
             
             num_experts_to_keep, num_unique_experts = optimize_expert_selection_parameterized(
                 topk_ids=topk_ids_initial,
@@ -150,8 +151,8 @@ def custom_routing_function(hidden_states: torch.Tensor,
             )
 
         elif policy == "advanced_parametrized":
-            beta = 0.5  # Default beta
-            alpha = 1.0  # Default alpha
+            beta = 0.5
+            alpha = 0.25
 
             num_experts_to_keep, num_unique_experts = optimize_expert_selection_parameterized(
                 topk_ids=topk_ids_initial,
@@ -289,7 +290,7 @@ def extract_important_graded(topk_weights, epsilon=1e-8):
     
     return confidence
 
-def optimize_expert_selection_parameterized(topk_ids, topk_weights, gating_output, num_experts, min_experts, topk, beta=0.5, alpha=1.0):
+def optimize_expert_selection_parameterized(topk_ids, topk_weights, gating_output, num_experts, min_experts, topk, beta=0.5, alpha=0.25):
     """
     Parameterized expert selection based on token confidence.
     Formula: keep_counts = floor(confidence * K * beta) + alpha

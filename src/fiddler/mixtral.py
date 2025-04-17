@@ -34,6 +34,8 @@ class FiddlerMixtral:
         self.n_layer = len(self.model.layers)
         self.n_expert = len(self.model.layers[0].block_sparse_moe.experts)
        
+        # Store gpu_boost_factor if provided
+        self.gpu_boost_factor = getattr(args, 'gpu_boost_factor', 5.0)
 
         # TODO: find this value based on device config
         self.latency_cpu = 7

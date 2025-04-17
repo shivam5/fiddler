@@ -44,6 +44,12 @@ if __name__ == "__main__":
         help="Routing policy to use for expert selection.",
     )
     parser.add_argument(
+        "--gpu_boost_factor",
+        type=float,
+        default=5.0,
+        help="Boost factor for GPU experts in gpu_boosted policy (theta value).",
+    )
+    parser.add_argument(
         "--output",
         type=str,
         default="results.json",

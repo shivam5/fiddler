@@ -14,10 +14,10 @@ import pandas as pd
 from datetime import datetime
 
 # current direcotory + runs + run_2
-run_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "runs", "run_6")
+run_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "runs", "run_8")
 
 
-def run_experiment(batch_size, routing_policy, input_token=512, output_token=128, num_samples=3):
+def run_experiment(batch_size, routing_policy, input_token=512, output_token=128, num_samples=3, gpu_boost_factor=None):
     """Run a single experiment with the given parameters"""
     
     # Create results directory if it doesn't exist
@@ -26,7 +26,11 @@ def run_experiment(batch_size, routing_policy, input_token=512, output_token=128
     
     # Construct output filename
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_file = f"{results_dir}/bs{batch_size}_policy_{routing_policy}_{timestamp}.json"
+    policy_name = routing_policy
+    if routing_policy == "gpu_boosted" and gpu_boost_factor is not None:
+        policy_name = f"{routing_policy}_theta{gpu_boost_factor}"
+    
+    output_file = f"{results_dir}/bs{batch_size}_policy_{policy_name}_{timestamp}.json"
     
     # Construct command
     cmd = [
@@ -39,7 +43,11 @@ def run_experiment(batch_size, routing_policy, input_token=512, output_token=128
         "--output", output_file
     ]
     
-    print(f"Running experiment: batch_size={batch_size}, policy={routing_policy}")
+    # Add GPU boost factor if specified
+    if gpu_boost_factor is not None:
+        cmd.extend(["--gpu_boost_factor", str(gpu_boost_factor)])
+    
+    print(f"Running experiment: batch_size={batch_size}, policy={policy_name}")
     print(f"Command: {' '.join(cmd)}")
     
     # Run the command
@@ -60,6 +68,11 @@ def generate_plots(result_files, output_dir=os.path.join(run_dir, "plots")):
         with open(result_file, 'r') as f:
             data = json.load(f)
             policy = data["config"]["routing_policy"]
+            
+            # Extract theta value if this is a gpu_boosted policy
+            if "gpu_boost_factor" in data["config"] and policy == "gpu_boosted":
+                policy = f"gpu_boosted_theta{data['config']['gpu_boost_factor']}"
+            
             batch_size = data["config"]["batch_size"]
             
             # Add summary data to results
@@ -67,130 +80,102 @@ def generate_plots(result_files, output_dir=os.path.join(run_dir, "plots")):
             summary["policy"] = policy
             summary["batch_size"] = batch_size
             
-            # Add expert utilization data if available
-            if "results" in data and len(data["results"]) > 0:
-                if "expert_utilization" in data["results"][0]:
-                    for result in data["results"]:
-                        if "expert_utilization" in result:
-                            util = result["expert_utilization"]
-                            if "avg_experts_per_layer" in util:
-                                summary["avg_experts_per_layer"] = util["avg_experts_per_layer"]
-                                summary["avg_gpu_experts_per_layer"] = util["avg_gpu_experts_per_layer"]
-                                summary["avg_cpu_experts_per_layer"] = util["avg_cpu_experts_per_layer"]
+            # Add unique experts per batch if available
+            if "avg_unique_experts_per_batch" in summary:
+                summary["avg_unique_experts_per_batch"] = summary["avg_unique_experts_per_batch"]
             
             all_results.append(summary)
     
     # Convert to DataFrame for easier plotting
     df = pd.DataFrame(all_results)
     
-    # 1. Plot latency vs batch size for different policies
-    plt.figure(figsize=(12, 8))
-    for policy, group in df.groupby("policy"):
-        plt.plot(group["batch_size"], group["avg_decode_time"], marker='o', label=policy)
+    # Get unique batch sizes
+    batch_sizes = df["batch_size"].unique()
+    is_single_batch = len(batch_sizes) == 1
     
-    plt.xlabel("Batch Size")
-    plt.ylabel("Decode Time (s)")
-    plt.title("Decode Latency vs Batch Size for Different Routing Policies")
+    # 1. Plot average decode time
+    plt.figure(figsize=(14, 8))
+    if is_single_batch:
+        # Bar chart for single batch size
+        batch_df = df.sort_values("avg_decode_time")
+        plt.bar(batch_df["policy"], batch_df["avg_decode_time"])
+        plt.xticks(rotation=45, ha="right")
+        plt.tight_layout()
+    else:
+        # Line chart for multiple batch sizes
+        for policy, group in df.groupby("policy"):
+            sorted_group = group.sort_values("batch_size")
+            plt.plot(sorted_group["batch_size"], sorted_group["avg_decode_time"], marker='o', label=policy)
+        plt.legend()
+    
+    plt.xlabel("Policy" if is_single_batch else "Batch Size")
+    plt.ylabel("Average Decode Time (s)")
+    plt.title("Average Decode Time by Policy" if is_single_batch else "Average Decode Time vs Batch Size")
     plt.grid(True)
-    plt.legend()
-    plt.savefig(f"{output_dir}/latency_vs_batch_size.png", dpi=300)
+    plt.savefig(f"{output_dir}/avg_decode_time.png", dpi=300)
     
-    # 2. Plot throughput improvement
-    plt.figure(figsize=(12, 8))
-    for policy, group in df.groupby("policy"):
-        if policy == "do-nothing":
-            continue
+    # 2. Plot average hit rate
+    plt.figure(figsize=(14, 8))
+    if is_single_batch:
+        # Bar chart for single batch size
+        batch_df = df.sort_values("avg_hit_rate", ascending=False)
+        bars = plt.bar(batch_df["policy"], batch_df["avg_hit_rate"] * 100)
+        plt.xticks(rotation=45, ha="right")
+        plt.tight_layout()
         
-        # For each batch size, calculate improvement compared to baseline
-        improvements = []
-        batch_sizes = []
-        
-        for bs in sorted(df["batch_size"].unique()):
-            baseline = df[(df["policy"] == "do-nothing") & (df["batch_size"] == bs)]["tokens_per_second"].values
-            if len(baseline) == 0:
-                continue
+        # Add percentage labels on top of bars
+        for bar in bars:
+            height = bar.get_height()
+            plt.text(bar.get_x() + bar.get_width()/2., height + 0.5,
+                     f'{height:.1f}%', ha='center', va='bottom')
+    else:
+        # Line chart for multiple batch sizes
+        for policy, group in df.groupby("policy"):
+            sorted_group = group.sort_values("batch_size")
+            plt.plot(sorted_group["batch_size"], sorted_group["avg_hit_rate"] * 100, marker='o', label=policy)
+        plt.legend()
+    
+    plt.xlabel("Policy" if is_single_batch else "Batch Size")
+    plt.ylabel("Average Hit Rate (%)")
+    plt.title("Average Hit Rate by Policy" if is_single_batch else "Average Hit Rate vs Batch Size")
+    plt.grid(True)
+    plt.savefig(f"{output_dir}/avg_hit_rate.png", dpi=300)
+    
+    # 3. Plot average unique experts per batch (if available)
+    if "avg_unique_experts_per_batch" in df.columns:
+        plt.figure(figsize=(14, 8))
+        if is_single_batch:
+            # Bar chart for single batch size
+            if df["avg_unique_experts_per_batch"].notnull().any():
+                batch_df = df.sort_values("avg_unique_experts_per_batch", ascending=False)
+                batch_df = batch_df[batch_df["avg_unique_experts_per_batch"].notnull()]
+                bars = plt.bar(batch_df["policy"], batch_df["avg_unique_experts_per_batch"])
+                plt.xticks(rotation=45, ha="right")
+                plt.tight_layout()
                 
-            current = df[(df["policy"] == policy) & (df["batch_size"] == bs)]["tokens_per_second"].values
-            if len(current) == 0:
-                continue
-                
-            improvement = (current[0] / baseline[0] - 1) * 100  # % improvement
-            improvements.append(improvement)
-            batch_sizes.append(bs)
+                # Add value labels on top of bars
+                for bar in bars:
+                    height = bar.get_height()
+                    plt.text(bar.get_x() + bar.get_width()/2., height + 0.1,
+                             f'{height:.1f}', ha='center', va='bottom')
+        else:
+            # Line chart for multiple batch sizes
+            for policy, group in df.groupby("policy"):
+                sorted_group = group.sort_values("batch_size")
+                if sorted_group["avg_unique_experts_per_batch"].notnull().any():
+                    plt.plot(sorted_group["batch_size"], 
+                             sorted_group["avg_unique_experts_per_batch"], 
+                             marker='o', label=policy)
+            plt.legend()
         
-        plt.plot(batch_sizes, improvements, marker='o', label=policy)
+        plt.xlabel("Policy" if is_single_batch else "Batch Size")
+        plt.ylabel("Avg Unique Experts Per Batch")
+        plt.title("Average Unique Experts Per Batch by Policy" if is_single_batch 
+                 else "Average Unique Experts Per Batch vs Batch Size")
+        plt.grid(True)
+        plt.savefig(f"{output_dir}/avg_unique_experts_per_batch.png", dpi=300)
     
-    plt.xlabel("Batch Size")
-    plt.ylabel("Throughput Improvement (%)")
-    plt.title("Throughput Improvement vs Batch Size for Different Routing Policies")
-    plt.grid(True)
-    plt.legend()
-    plt.savefig(f"{output_dir}/throughput_improvement.png", dpi=300)
-    
-    # 3. Plot GPU expert utilization
-    plt.figure(figsize=(12, 8))
-    for policy, group in df.groupby("policy"):
-        plt.plot(group["batch_size"], group["avg_gpu_expert_percentage"] * 100, marker='o', label=policy)
-    
-    plt.xlabel("Batch Size")
-    plt.ylabel("GPU Expert Utilization (%)")
-    plt.title("GPU Expert Utilization vs Batch Size for Different Routing Policies")
-    plt.grid(True)
-    plt.legend()
-    plt.savefig(f"{output_dir}/gpu_expert_utilization.png", dpi=300)
-    
-    # 4. Plot experts used per layer for different policies
-    if "avg_experts_per_layer" in df.columns:
-        plt.figure(figsize=(12, 8))
-        
-        # Group by policy and get average
-        policy_expert_usage = df.groupby("policy")[
-            ["avg_experts_per_layer", "avg_gpu_experts_per_layer", "avg_cpu_experts_per_layer"]
-        ].mean().reset_index()
-        
-        # Sort by avg_experts_per_layer
-        policy_expert_usage = policy_expert_usage.sort_values("avg_experts_per_layer", ascending=False)
-        
-        # Create bar plot
-        policies = policy_expert_usage["policy"]
-        x = np.arange(len(policies))
-        width = 0.25
-        
-        fig, ax = plt.subplots(figsize=(12, 8))
-        ax.bar(x - width, policy_expert_usage["avg_experts_per_layer"], width, label="Total Experts")
-        ax.bar(x, policy_expert_usage["avg_gpu_experts_per_layer"], width, label="GPU Experts")
-        ax.bar(x + width, policy_expert_usage["avg_cpu_experts_per_layer"], width, label="CPU Experts")
-        
-        ax.set_ylabel("Avg Experts Per Layer")
-        ax.set_title("Expert Utilization by Routing Policy")
-        ax.set_xticks(x)
-        ax.set_xticklabels(policies)
-        ax.legend()
-        ax.grid(True, axis='y')
-        
-        # Add a horizontal line at 8 (total experts)
-        ax.axhline(y=8, color='r', linestyle='--', alpha=0.5, label="Total Experts Available")
-        
-        plt.savefig(f"{output_dir}/expert_utilization_by_policy.png", dpi=300)
-    
-    # 5. Bar chart comparing policies for a specific batch size
-    plt.figure(figsize=(12, 8))
-    
-    # Select a batch size (e.g., the maximum one)
-    max_batch_size = df["batch_size"].max()
-    batch_df = df[df["batch_size"] == max_batch_size]
-    
-    policies = batch_df["policy"].tolist()
-    decode_times = batch_df["avg_decode_time"].tolist()
-    
-    plt.bar(policies, decode_times)
-    plt.xlabel("Routing Policy")
-    plt.ylabel("Decode Time (s)")
-    plt.title(f"Decode Time Comparison for Batch Size {max_batch_size}")
-    plt.grid(True, axis='y')
-    plt.savefig(f"{output_dir}/policy_comparison_bs{max_batch_size}.png", dpi=300)
-    
-    # 6. Save summary table as CSV
+    # Save summary table as CSV
     df.to_csv(f"{output_dir}/summary_results.csv", index=False)
     
     print(f"Plots and summary saved to {output_dir}")
@@ -198,19 +183,19 @@ def generate_plots(result_files, output_dir=os.path.join(run_dir, "plots")):
 def main():
     parser = argparse.ArgumentParser(description="Run experiments for different MoE routing policies")
     # parser.add_argument("--batch_sizes", type=int, nargs="+", default=[1, 2, 4, 8], 
-    parser.add_argument("--batch_sizes", type=int, nargs="+", default=[4], 
+    parser.add_argument("--batch_sizes", type=int, nargs="+", default=[16], 
                         help="Batch sizes to test")
     parser.add_argument("--policies", type=str, nargs="+", 
-                        default=["gpu_boosted", "do-nothing", "advanced_parametrized", "gpu_only"],
-                        # default=["do-nothing", "advanced", "advanced_parametrized", "gpu_only"],
-                        # default=["do-nothing", "simple", "advanced", "rotate"],
+                        default=["do-nothing", "advanced_parametrized", "gpu_only"],
                         help="Routing policies to test")
+    parser.add_argument("--run_gpu_boosted", action="store_true", default=False,
+                        help="Run gpu_boosted policy with different theta values")
     parser.add_argument("--input_token", type=int, default=512, 
                         help="Number of input tokens")
     parser.add_argument("--output_token", type=int, default=128, 
                         help="Number of output tokens")
-    parser.add_argument("--num_samples", type=int, default=4, 
-                        help="Number of samples per configuration")
+    parser.add_argument("--num_samples", type=int, default=0, 
+                        help="Number of samples per configuration (if 0, will match batch_size)")
     
     args = parser.parse_args()
     
@@ -218,15 +203,32 @@ def main():
     
     # Run experiments for each combination of batch size and policy
     for batch_size in args.batch_sizes:
+        # Set num_samples to match batch_size to run exactly 1 batch
+        experiment_samples = batch_size if args.num_samples == 0 else args.num_samples
+        
         for policy in args.policies:
             result_file = run_experiment(
                 batch_size=batch_size,
                 routing_policy=policy,
                 input_token=args.input_token,
                 output_token=args.output_token,
-                num_samples=args.num_samples
+                num_samples=experiment_samples
             )
             result_files.append(result_file)
+        
+        # Run gpu_boosted with different theta values
+        if args.run_gpu_boosted:
+            theta_values = [1.2, 1.5, 2.0, 3.0, 5.0, 10.0]
+            for theta in theta_values:
+                result_file = run_experiment(
+                    batch_size=batch_size,
+                    routing_policy="gpu_boosted",
+                    input_token=args.input_token,
+                    output_token=args.output_token,
+                    num_samples=experiment_samples,
+                    gpu_boost_factor=theta
+                )
+                result_files.append(result_file)
     
     # Generate plots from results
     generate_plots(result_files)
