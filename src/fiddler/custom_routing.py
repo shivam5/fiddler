@@ -3,19 +3,10 @@ import torch
 def custom_routing_function(hidden_states: torch.Tensor,
                             router_logits: torch.Tensor,
                             topk: int,
-                            renormalize: bool):
-    # Try to get the policy from the caller's model instance
-    # This is a bit of a hack, but it works
-    import inspect
-    frame = inspect.currentframe().f_back
-    model = frame.f_locals.get('self', None)
-    policy = getattr(model, 'routing_policy', 'do-nothing')
-    
-    # Determine if it's prefill or decode phase based on sequence length
-    # Prefill phase has sequence length 512, decode phase has sequence length 128
-    is_prefill = hidden_states.shape[0] == 512
-    profile_complete = True  # We'll assume profiling is complete
-    
+                            renormalize: bool,
+                            model=None,
+                            i_layer=0,
+                            policy="do-nothing"):
     # Default parameters
     num_total_experts = 8  # Mixtral has 8 experts
     num_experts_per_token = 2  # We use top-2 experts
@@ -24,6 +15,11 @@ def custom_routing_function(hidden_states: torch.Tensor,
     threshold_percentile = 0.5  # Default threshold
     count_of_topk = 2  # Default count
 
+    # Determine if it's prefill or decode phase based on sequence length
+    # Prefill phase has sequence length 512, decode phase has sequence length 128
+    is_prefill = hidden_states.shape[0] == 512
+    profile_complete = True  # We'll assume profiling is complete
+
     if policy == "do-nothing":
         topk_weights, topk_ids = fused_topk(
             hidden_states, router_logits, topk, renormalize
@@ -31,94 +27,69 @@ def custom_routing_function(hidden_states: torch.Tensor,
         return topk_weights, topk_ids, num_experts_to_keep
         
     if profile_complete and not is_prefill:
-        masked_logits = router_logits
+        masked_logits = router_logits.clone()  # Create a copy to avoid modifying the original
 
-        # First pass top-k
+        # Apply policy-specific modifications to the logits before initial top-k
+        if policy == "gpu_boosted":
+            # Get boost factor (theta) from model or use default
+            theta = getattr(model, 'gpu_boost_factor', 5.0)
+            
+            # Create a boost mask for GPU experts (vectorized approach)
+            if model:
+                # Create binary mask indicating which experts are on GPU
+                gpu_expert_mask = torch.zeros(num_total_experts, device=masked_logits.device)
+                # Get GPU expert locations from model's expert_loc tensor if possible
+                if hasattr(model, 'expert_loc'):
+                    gpu_expert_mask = torch.tensor(model.expert_loc[i_layer] == 1, 
+                                                device=masked_logits.device, 
+                                                dtype=torch.float32)
+                # Apply boost factor: 1.0 for CPU experts, theta for GPU experts
+                boost_mask = torch.ones_like(masked_logits)
+                boost_mask = 1.0 + (theta - 1.0) * gpu_expert_mask.unsqueeze(0)
+            else:
+                # Fallback to default if model is None
+                boost_mask = torch.ones_like(masked_logits)
+            
+            # Apply the boost to the logits in one operation
+            masked_logits = masked_logits * boost_mask
+        
+        elif policy == "gpu_only":
+            # Create mask for GPU experts (vectorized approach)
+            if model and hasattr(model, 'expert_loc'):
+                # Get mask directly from model's expert_loc tensor
+                mask = torch.tensor(model.expert_loc[i_layer] == 1, 
+                                  device=masked_logits.device, 
+                                  dtype=torch.float32)
+            else:
+                # Fallback to old approach if model doesn't have expert_loc
+                mask = torch.zeros(masked_logits.shape[1], device=masked_logits.device)
+                if model:
+                    for i_expert in range(num_total_experts):
+                        if model.is_expert_in_gpu(i_layer, i_expert):
+                            mask[i_expert] = 1.0
+            
+            # Set logits of non-GPU experts to a large negative value
+            large_negative = -1e10
+            masked_logits = torch.where(mask.unsqueeze(0) > 0, masked_logits, 
+                                     torch.tensor(large_negative, device=masked_logits.device))
+            
+            # Count GPU experts
+            gpu_experts_count = mask.sum().int()
+            num_experts_to_keep = gpu_experts_count
+            
+            # Compute routing weights with masked logits
+            topk_weights, topk_ids = fused_topk(
+                hidden_states, masked_logits, topk, renormalize=renormalize
+            )
+            
+            return topk_weights, topk_ids, num_experts_to_keep
+
+        # First pass top-k for all policies except gpu_only (which already computed it)
         topk_weights_initial, topk_ids_initial = fused_topk(
             hidden_states, masked_logits, topk, renormalize=True
         )
-        
-        if policy == "gpu_only":
-            # Get the current layer index from the model
-            i_layer = frame.f_locals.get('i_layer', 0)
-            
-            # Create mask for GPU experts
-            mask = torch.zeros(masked_logits.shape[1], device=masked_logits.device)
-            for i_expert in range(num_total_experts):
-                if model.is_expert_in_gpu(i_layer, i_expert):
-                    mask[i_expert] = 1.0
-            
-            # Set logits of non-GPU experts to a large negative value to guarantee they aren't chosen
-            # This is more robust than multiplication which might allow small non-zero values
-            large_negative = -1e10
-            masked_logits = torch.where(mask.unsqueeze(0) > 0, masked_logits, torch.tensor(large_negative, device=masked_logits.device))
-            
-            # Compute new routing weights with masked logits
-            topk_weights, topk_ids = fused_topk(
-                hidden_states, masked_logits, topk, renormalize=renormalize
-            )
-            
-            # Verify all selected experts are on GPU
-            gpu_experts = []
-            for i_expert in range(num_total_experts):
-                if model.is_expert_in_gpu(i_layer, i_expert):
-                    gpu_experts.append(i_expert)
-            
-            # Double-check that topk_ids only contains GPU experts
-            # This handles any edge cases in numerical precision
-            if len(gpu_experts) >= topk:
-                for i in range(topk_ids.shape[0]):
-                    for j in range(topk_ids.shape[1]):
-                        if topk_ids[i, j].item() not in gpu_experts:
-                            # Replace with the first GPU expert
-                            topk_ids[i, j] = torch.tensor(gpu_experts[0], device=topk_ids.device, dtype=topk_ids.dtype)
-            
-            # Count how many GPU experts we're keeping
-            gpu_experts_count = 0
-            for i_expert in range(num_total_experts):
-                if model.is_expert_in_gpu(i_layer, i_expert):
-                    gpu_experts_count += 1
-            
-            num_experts_to_keep = gpu_experts_count
 
-        elif policy == "gpu_boosted":
-            # Like advanced_parameterized but with a boost for GPU experts
-            # Get the current layer index from the model
-            i_layer = frame.f_locals.get('i_layer', 0)
-            # Get theta from model or use default
-            theta = getattr(model, 'gpu_boost_factor', 5.0)  # Default to 5.0 if not specified
-            
-            # Boost weights for GPU experts
-            for i_expert in range(num_total_experts):
-                if model.is_expert_in_gpu(i_layer, i_expert):
-                    # Multiply by theta to increase importance of GPU experts
-                    masked_logits[:, i_expert] *= theta
-            
-            # Recompute initial topk after boosting GPU experts
-            topk_weights_initial, topk_ids_initial = fused_topk(
-                hidden_states, masked_logits, topk, renormalize=True
-            )
-            
-            # Apply parameterized expert selection like in advanced_parameterized
-            beta = 0.5
-            alpha = 0.25
-            
-            num_experts_to_keep, num_unique_experts = optimize_expert_selection_parameterized(
-                topk_ids=topk_ids_initial,
-                topk_weights=topk_weights_initial, 
-                gating_output=masked_logits,
-                num_experts=num_total_experts,
-                min_experts=min_experts,
-                topk=num_experts_per_token,
-                beta=beta,
-                alpha=alpha,
-            )
-            
-            topk_weights, topk_ids = fused_topk(
-                hidden_states, masked_logits, topk, renormalize=renormalize
-            )
-
-        elif policy == "simple":
+        if policy == "simple":
             num_experts_to_keep = 4  # Keep only 4 experts
             num_experts_to_drop = num_total_experts - num_experts_to_keep
             
@@ -126,13 +97,6 @@ def custom_routing_function(hidden_states: torch.Tensor,
                 topk_ids_initial,
                 masked_logits,
                 num_experts_to_drop=num_experts_to_drop
-            )
-
-            topk_weights, topk_ids = fused_topk(
-                hidden_states, 
-                masked_logits, 
-                topk, 
-                renormalize=renormalize
             )
 
         elif policy == "advanced":
@@ -145,14 +109,10 @@ def custom_routing_function(hidden_states: torch.Tensor,
                 min_experts=min_experts,
                 topk=num_experts_per_token,
             )
-            
-            topk_weights, topk_ids = fused_topk(
-                hidden_states, masked_logits, topk, renormalize=renormalize
-            )
 
-        elif policy == "advanced_parametrized":
-            beta = 0.5
-            alpha = 0.25
+        elif policy in ["advanced_parametrized", "gpu_boosted"]:
+            beta = 0.7
+            alpha = 0.0
 
             num_experts_to_keep, num_unique_experts = optimize_expert_selection_parameterized(
                 topk_ids=topk_ids_initial,
@@ -165,27 +125,22 @@ def custom_routing_function(hidden_states: torch.Tensor,
                 alpha=alpha,
             )
 
-            topk_weights, topk_ids = fused_topk(
-                hidden_states, masked_logits, topk, renormalize=renormalize
-            )
-
         elif policy == "rotate":
             rank1 = 0  # Default rank1
             rank2 = 1  # Default rank2
             rot_pref(masked_logits, rank1, rank2)
-            topk_weights, topk_ids = fused_topk(
-                hidden_states, router_logits, topk, renormalize
-            )
             num_experts_to_keep = num_total_experts - 2
 
         elif policy == "rotate_based_on_confidence":
             confidence_policy = "mean"  # Default confidence policy
             quartile = 0.5  # Default quartile
             rotate_based_on_confidence(masked_logits, topk_weights_initial, threshold_percentile, confidence_policy, quartile)
-            topk_weights, topk_ids = fused_topk(
-                hidden_states, router_logits, topk, renormalize
-            )
             
+        # Final top-k computation with the masked logits (except for gpu_only which already returned)
+        topk_weights, topk_ids = fused_topk(
+            hidden_states, masked_logits, topk, renormalize=renormalize
+        )
+        
     else:
         # Prefill case — no expert dropping
         topk_weights, topk_ids = fused_topk(
@@ -290,7 +245,7 @@ def extract_important_graded(topk_weights, epsilon=1e-8):
     
     return confidence
 
-def optimize_expert_selection_parameterized(topk_ids, topk_weights, gating_output, num_experts, min_experts, topk, beta=0.5, alpha=0.25):
+def optimize_expert_selection_parameterized(topk_ids, topk_weights, gating_output, num_experts, min_experts, topk, beta=0.7, alpha=0.0):
     """
     Parameterized expert selection based on token confidence.
     Formula: keep_counts = floor(confidence * K * beta) + alpha

@@ -565,7 +565,10 @@ class FiddlerMixtral:
                     hidden_states=inps,
                     router_logits=router_logits,
                     topk=2,  # We use top-2 experts
-                    renormalize=True
+                    renormalize=True,
+                    model=self,
+                    i_layer=i_layer,
+                    policy=self.routing_policy
                 )
                 # Ensure correct dtypes
                 if selected_experts.dtype != torch.int64:
